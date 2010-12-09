@@ -10,12 +10,17 @@
 		<title>Sinister Chipmunk's Projects</title>
 		<base href="http://sinisterchipmunk.github.com" target="_blank" />
 		<style>
-			table { width: 75%; margin-left:auto;margin-right:auto; }
+/*			table { width: 75%; margin-left:auto;margin-right:auto; } */
 			th { text-align:left; font-size:150%; }
 			td { text-align:justify; }
 
-			.sep1 { border-bottom: 1px solid #ccc; height:1em;padding: 0; margin:0; }
-			.sep2 { height:1em; }
+			#outer { width:75%; margin-left:auto; margin-right:auto; }
+
+			.left { float:left; }
+			.sep1 { clear:both; border-bottom: 1px solid #ccc; height:1em;padding: 0; margin:0; }
+			.sep2 { clear:both; height:1em; }
+
+			img { border:0; }
 		</style>
 	</head>
 
@@ -28,26 +33,30 @@
 			This isn't an "About Me" page. For that (and more about my various day-to-day goings-on), <a href="http://thoughtsincomputation.com">check out my blog</a>.
 		</p>
 
-		<table>
+		<div id="outer">
 			<script>
 				for (var i = 0; i < projects.length; i++)
 				{
-					var install_link = "";
+					var install_link = null;
 					switch(projects[i].type) {
-						case 'gem': install_link = "<a href='http://rubygems.org/"+projects[i].name+"'><img src='images/gem.png' /></a>";
+						case 'gem': install_link = "<a href='http://rubygems.org/gems/"+projects[i].name+"'><img src='images/gem.png' /></a>";
 					};
+	
+					if (install_link) document.writeln("<div class='left'>"+install_link+"</div>");
 
+					document.writeln("<table>");
 					document.writeln("<tr><th><a href='"+projects[i].name+"/README_rdoc.html'>"+projects[i].name+"</a>" +
-													 install_link +
 													 "</th></tr>");
 					document.writeln("<tr><td>"+projects[i].desc+"</td></tr>");
+					document.writeln("</table>");
+
 					if (i != projects.length-1) {
-        	                                document.writeln("<tr><td class='sep1'>&nbsp;</td></tr>");
-	                                        document.writeln("<tr><td class='sep2'>&nbsp;</td></tr>");
+						document.writeln("<div class='sep1'>&nbsp;</div>");
+						document.writeln("<div class='sep2'>&nbsp;</div>");
 					}
 				}
 			</script>
-		</table>
+		</div>
 	</body>
 </html>
 
