@@ -1,0 +1,53 @@
+<html>
+	<head>
+		<script>
+			/* maybe I can cut down on HTML code if I cheat. */
+			var projects = [
+				{name: "eve", desc: "A gem which interfaces with the EVE Online API as well as the EVE In-game Browser (IGB). Rails 3 support is underway and should be available for the 2.0 release.",type:'gem'}
+			];
+		</script>
+
+		<title>Sinister Chipmunk's Projects</title>
+		<base href="http://sinisterchipmunk.github.com" target="_blank" />
+		<style>
+			table { width: 75%; margin-left:auto;margin-right:auto; }
+			th { text-align:left; font-size:150%; }
+			td { text-align:justify; }
+
+			.sep1 { border-bottom: 1px solid #ccc; height:1em;padding: 0; margin:0; }
+			.sep2 { height:1em; }
+		</style>
+	</head>
+
+	<body>
+		<h2>Sinister Chipmunk's Projects</h2>
+		<p>
+			I needed a place to index all of my active projects, and descriptions of them. I was going to roll my own, but then GitHub Pages came online. Now I can spend more time coding Projects That Matter<sup>TM</sup>. Sweet.
+		</p>
+		<p>
+			This isn't an "About Me" page. For that (and more about my various day-to-day goings-on), <a href="http://thoughtsincomputation.com">check out my blog</a>.
+		</p>
+
+		<table>
+			<script>
+				for (var i = 0; i < projects.length; i++)
+				{
+					var install_link = "";
+					switch(projects[i].type) {
+						case 'gem': install_link = "<a href='http://rubygems.org/"+projects[i].name+"><img src='images/gem.png' /></a>";
+					};
+
+					document.writeln("<tr><th><a href='"+projects[i].name+"/README_rdoc.html'>"+projects[i].name+"</a>" +
+													 install_link +
+													 "</th></tr>");
+					document.writeln("<tr><td>"+projects[i].desc+"</td></tr>");
+					if (i != projects.length-1) {
+        	                                document.writeln("<tr><td class='sep1'>&nbsp;</td></tr>");
+	                                        document.writeln("<tr><td class='sep2'>&nbsp;</td></tr>");
+					}
+				}
+			</script>
+		</table>
+	</body>
+</html>
+
