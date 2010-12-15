@@ -3,11 +3,28 @@
 		<script>
 			/* maybe I can cut down on HTML code if I cheat. */
 			var projects = [
-				{name: "eve", desc: "A gem which interfaces with the EVE Online API as well as the EVE In-game Browser (IGB). Rails 3 support is underway and should be available for the 2.0 release.",type:'gem'}
+              {name:"bot-away",    type:"gem", desc:"Silently, unobtrusively masks Rails-generated forms in order to filter out spambot submissions without resorting to CAPTCHA prompts"},
+              {name:"bvh",         type:"gem", desc:"A library for loading, modifying and saving BVH motion capture files"},
+              {name:"eve",         type:"gem", desc:"A gem which interfaces with the EVE Online API as well as the EVE In-game Browser (IGB). Rails 3 support is underway and should be available for the 2.0 release."},
+              {name:"genspec",     type:"gem", desc:"An RSpec-based library for concisely and efficiently testing Rails generators"},
+              {name:"google-blogsearch-pings", type:"gem", desc:"Utilizes the Google Blog Search Pinging Service API in order to notify Google of updates to your blog so that it can be reindexed more quickly. See also: <a href='http://www.google.com/help/blogsearch/pinging_API.html'>Google Blogsearch Pinging API</a>"},
+              {name:"gravatar-ultimate", source:"gravatar", type:"gem", desc:"A gem for interfacing with the entire Gravatar API: not just images, but the XML-RPC API too!"},
+              {name:"md2",         type:"gem", desc:"A Ruby library for loading MD2 3D model files"},
+              {name:"node.rb",     type:"gem", desc:"Embeds a Ruby interpreter into Node.js, so you can execute Ruby code from within your Node-based JavaScript"},
+              {name:"rails-webgl", doc:false, desc:"A WebGL framework for Ruby on Rails"},
+              {name:"rink",        type:"gem", desc:"Makes interactive consoles awesome."},
+              {name:"rspec-prof",  type:"gem", desc:"Integrates ruby-prof with RSpec, allowing you to easily profile your RSpec examples."},
+              {name:"rtml",        type:"gem", desc:"RubyTML: An Web application development framework built on Ruby on Rails for Incendo-based terminals"},
+              {name:"rtml-beryl",  type:"git", desc:"A generic baseline payment application built with RubyTML"},
+              {name:"sc-ansi",     type:"gem", desc:"Handles every aspect (that I could think of) of dealing with ANSI escape sequences"},
+              {name:"sc-core-ext", type:"gem", source:"core-ext", desc:"A collection of Ruby core extensions that I've built up over time. They rely on ActiveSupport."},
+              {name:"sizes",       type:"gem", desc:"A very simple gem that exposes the C <em>sizeof</em> keyword to Ruby"},
+              {name:"sparkly-auth",type:"gem", desc:"Rails authentication with Sparkles!"},
+              {name:"tomato",      type:"gem", desc:"Leverages Google's V8 JavaScript library to interface Ruby code with JavaScript code"}
 			];
 		</script>
 
-		<title>Sinister Chipmunk's Projects</title>
+		<title>Colin Mackenzie IV's Projects</title>
 		<base href="http://sinisterchipmunk.github.com" target="_blank" />
 		<style>
 /*			table { width: 75%; margin-left:auto;margin-right:auto; } */
@@ -15,17 +32,18 @@
 			td { text-align:justify; }
 
 			#outer { width:75%; margin-left:auto; margin-right:auto; }
+            a { color:#00f !important; }
 
 			.left { float:left; }
 			.sep1 { clear:both; border-bottom: 1px solid #ccc; height:1em;padding: 0; margin:0; }
 			.sep2 { clear:both; height:1em; }
 
-			img { border:0; }
+			img { border:0;with:60px;height:60px; }
 		</style>
 	</head>
 
 	<body>
-		<h2>Sinister Chipmunk's Projects</h2>
+		<h2><a href="http://thoughtsincomputation.com">Colin Mackenzie IV</a>'s Projects</h2>
 		<p>
 			I needed a place to index all of my active projects, and descriptions of them. I was going to roll my own, but then GitHub Pages came online. Now I can spend more time coding Projects That Matter<sup>TM</sup>. Sweet.
 		</p>
@@ -43,9 +61,12 @@
 					};
 	
 					if (install_link) document.writeln("<div class='left'>"+install_link+"</div>");
+                    var dest_link = (projects[i].source || projects[i].name)+(projects[i].file || "/index.html");
+                    if (typeof(projects[i].doc) != "undefined" && !projects[i].doc)
+                      dest_link = "http://github.com/sinisterchipmunk/"+(projects[i].source || projects[i].name);
 
 					document.writeln("<table>");
-					document.writeln("<tr><th><a href='"+projects[i].name+"/README_rdoc.html'>"+projects[i].name+"</a>" +
+					document.writeln("<tr><th><a href='"+dest_link+"'>"+projects[i].name+"</a>" +
 													 "</th></tr>");
 					document.writeln("<tr><td>"+projects[i].desc+"</td></tr>");
 					document.writeln("</table>");
