@@ -1,4 +1,4 @@
-[![screenshot](http://github.com/sinisterchipmunk/jax-dungeon/blob/master/public/screenshot.png)](http://github.com/sinisterchipmunk/jax-dungeon/blob/master/public/screenshot.png)
+[![screenshot](https://github.com/sinisterchipmunk/jax-dungeon/raw/master/public/screenshot.png)](https://github.com/sinisterchipmunk/jax-dungeon/blob/master/public/screenshot.png)
 
 A demo developed using the Jax WebGL framework (http://github.com/sinisterchipmunk/jax). The core of the demo took
 about an hour to write; it took me more time to debug the arched ceilings. A simple cube-shaped dungeon would have
