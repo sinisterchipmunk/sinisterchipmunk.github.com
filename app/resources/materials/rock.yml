@@ -1,0 +1,30 @@
+ambient:
+  red:   1.0
+  green: 1.0
+  blue:  1.0
+  alpha: 1.0
+
+diffuse:
+  red:   1.0
+  green: 1.0
+  blue:  1.0
+  alpha: 1.0
+
+specular:
+  red:   0.0
+  green: 0.0
+  blue:  0.0
+  alpha: 0.0
+
+shininess: 10
+
+layers:
+  - type: Texture
+    path: "/public/images/rock.png"
+    scale_x: 1.0
+    scale_y: 1.0
+    
+  - type: NormalMap
+    path: "/public/images/rockNormal.png"
+    scale_x: 1.0
+    scale_y: 1.0
