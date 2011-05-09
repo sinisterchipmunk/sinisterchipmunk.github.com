@@ -6,6 +6,10 @@ This is a demo developed using the Jax WebGL framework (http://github.com/sinist
 took about an hour to write; it took me more time to debug the arched ceilings. A simple cube-shaped dungeon would have
 been much easier, but wouldn't have come out looking nearly as nice.
 
+## Controls
+
+Use W/S/A/D or up/down/left/right to move forward/backward/strafe left/strafe right. Use the mouse to turn.
+
 ## Features
 
 This demo showcases the following Jax features:
