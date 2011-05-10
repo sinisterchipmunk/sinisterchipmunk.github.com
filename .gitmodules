@@ -1,0 +1,3 @@
+[submodule "src/dungeon"]
+	path = src/dungeon
+	url = git://github.com/sinisterchipmunk/jax-dungeon.git

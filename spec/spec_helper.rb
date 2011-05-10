@@ -1,0 +1,1 @@
+require File.expand_path("../bin/merge-assets", File.dirname(__FILE__))
