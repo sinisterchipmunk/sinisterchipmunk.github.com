@@ -20,11 +20,11 @@ shininess: 10
 
 layers:
   - type: Texture
-    path: "/public/images/rock.png"
+    path: "/images/rock.png"
     scale_x: 1.0
     scale_y: 1.0
     
   - type: NormalMap
-    path: "/public/images/rockNormal.png"
+    path: "/images/rockNormal.png"
     scale_x: 1.0
     scale_y: 1.0

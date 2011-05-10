@@ -1,3 +1,6 @@
+Jax.environment = Jax.PRODUCTION;
+
+
 var ApplicationController = (function() {
   return Jax.Controller.create("application", Jax.Controller, {
 
@@ -14,20 +17,31 @@ var DungeonController = (function() {
       material.layers[1].map.options.wrap_t = GL_REPEAT;
       this.movement = { left: 0, right: 0, forward: 0, backward: 0 };
 
-      var dungeon = new Dungeon();
-      dungeon.mesh.material = material;
-      dungeon.orientPlayer(this.player);
+      this.dungeon = new Dungeon();
+      this.dungeon.mesh.material = material;
+      this.dungeon.orientPlayer(this.player);
 
-      this.world.addObject(dungeon);
-      dungeon.addTorches("torch", this.world);
+      this.world.addObject(this.dungeon);
+      this.dungeon.addTorches("torch", this.world);
+
+      this.world.addLightSource(window.lantern = LightSource.find("lantern"));
     },
 
     update: function(timechange) {
-      this.player.camera.move((this.movement.forward+this.movement.backward)*timechange);
-      this.player.camera.strafe((this.movement.left+this.movement.right)*timechange);
+      var speed = 1.5;
+
+      var previousPosition = this.player.camera.getPosition();
+      this.player.camera.move((this.movement.forward+this.movement.backward)*timechange*speed);
+      this.player.camera.strafe((this.movement.left+this.movement.right)*timechange*speed);
       var pos = this.player.camera.getPosition();
       pos[1] = 0.5; // set Y value in case it changed
       this.player.camera.orient(this.player.camera.getViewVector(), [0,1,0], pos);
+
+      var newpos = this.player.camera.getPosition();
+
+      this.player.camera.setPosition(this.dungeon.walk(previousPosition, newpos));
+
+      window.lantern.camera.setPosition(vec3.add(this.player.camera.getPosition(), vec3.scale(this.player.camera.getViewVector(), 0.1)));
     },
 
     mouse_moved: function(event) {
@@ -241,6 +255,43 @@ var Dungeon = (function() {
       $super({mesh:new DungeonMesh(this)});
     },
 
+    walk: function(oldPos, newPos) {
+      /* NOT YET WORKING */
+      return newPos;
+      /*
+      var x = Math.round(oldPos[0]), y = Math.round(oldPos[2]);
+      var current = oldPos;
+      var dx = Math.abs(Math.round(newPos[0])-x), dy = Math.abs(Math.round(newPos[2])-y);
+      var sx, sy;
+      if (oldPos[0] < newPos[0]) sx = 1; else sx = -1;
+      if (oldPos[2] < newPos[2]) sy = 1; else sy = -1;
+      var err = dx - dy;
+
+      while (true) {
+        current[0] = x;
+        current[2] = y;
+        if (x == Math.round(newPos[0]) && y == Math.round(newPos[2]))
+          return newPos;
+        var e2 = 2*err;
+        if (e2 > -dy) {
+          err = err - dy;
+          x = x + sx;
+        }
+        if (e2 < dx) {
+          err = err + dx;
+          y = y + sy;
+        }
+        if (x < 0 || x == this.map[0].length-1 || y < 0 || y == this.map.length-1) {
+          if (x < 0)                          vec3.add(current, [-0.48, 0, 0]);
+          else if (x == this.map[0].length-1) vec3.add(current, [ 0.48, 0, 0]);
+          if (y < 0)                          vec3.add(current, [ 0,    0, -0.48]);
+          else if (y == this.map.length-1)    vec3.add(current, [ 0,    0,  0.48]);
+          return current;
+        }
+      }
+      */
+    },
+
     orientPlayer: function(player) {
       var pos = this.playerStart.position.split(/,\s*/);
       var dir = this.playerStart.direction.split(/,\s*/);
@@ -271,8 +322,8 @@ Jax.views.push('dungeon/index', function() {
   this.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   this.world.render();
 });
-Dungeon.addResources({"default":{"map":["XXXXXXXXXXXXXXXXXXXXXX","X'  '  '  '  '  '  ' X","X XXXXXXXXXXXXXXXXXX X","X XXXX'  '  '  '  'X'X","X'  '  XXXXXXXXXXXXX X","XXXXXXXXXXXXXXXXXXXXXX"],"playerStart":{"position":"18, 3","direction":"-1, 0"}}});
-LightSource.addResources({"torch":{"shadowcaster":true,"enabled":true,"position":{"x":-20,"y":0,"z":0},"direction":{"x":1,"y":0,"z":0},"type":"POINT_LIGHT","attenuation":{"constant":0,"linear":0,"quadratic":0.5},"color":{"ambient":{"red":0.3,"green":0.3,"blue":0.3,"alpha":1},"diffuse":{"red":0.35,"green":0.35,"blue":0.35,"alpha":1.0},"specular":{"red":0,"green":0,"blue":0,"alpha":0}}}});
-Material.addResources({"rock":{"ambient":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"diffuse":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"specular":{"red":0.0,"green":0.0,"blue":0.0,"alpha":0.0},"shininess":10,"layers":[{"type":"Texture","path":"/public/images/rock.png","scale_x":1.0,"scale_y":1.0},{"type":"NormalMap","path":"/public/images/rockNormal.png","scale_x":1.0,"scale_y":1.0}]}});
+Dungeon.addResources({"default":{"map":["XXXXXXXXXXXXXXXXXXXXXX","X'     '     '     ' X","X XXXXXXXXXXXXXXXXXX X","X XXXX'     '     'X'X","X'     XXXXXXXXXXXXX X","XXXXXXXXXXXXXXXXXXXXXX"],"playerStart":{"position":"18, 3","direction":"-1, 0"}}});
+LightSource.addResources({"lantern":{"shadowcaster":true,"enabled":true,"position":{"x":-20,"y":0,"z":0},"type":"POINT_LIGHT","attenuation":{"constant":0,"linear":1,"quadratic":0},"color":{"ambient":{"red":0.3,"green":0.3,"blue":0.3,"alpha":1},"diffuse":{"red":0.35,"green":0.35,"blue":0.35,"alpha":1.0},"specular":{"red":0,"green":0,"blue":0,"alpha":0}}},"torch":{"shadowcaster":true,"enabled":true,"position":{"x":-20,"y":0,"z":0},"direction":{"x":1,"y":0,"z":0},"type":"POINT_LIGHT","attenuation":{"constant":0,"linear":0,"quadratic":0.5},"color":{"ambient":{"red":0.3,"green":0.3,"blue":0.3,"alpha":1},"diffuse":{"red":0.35,"green":0.35,"blue":0.35,"alpha":1.0},"specular":{"red":0,"green":0,"blue":0,"alpha":0}}}});
+Material.addResources({"rock":{"ambient":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"diffuse":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"specular":{"red":0.0,"green":0.0,"blue":0.0,"alpha":0.0},"shininess":10,"layers":[{"type":"Texture","path":"/images/rock.png","scale_x":1.0,"scale_y":1.0},{"type":"NormalMap","path":"/images/rockNormal.png","scale_x":1.0,"scale_y":1.0}]}});
 Jax.routes.root(DungeonController, "index");
 Jax.routes.map("dungeon/index", DungeonController, "index");

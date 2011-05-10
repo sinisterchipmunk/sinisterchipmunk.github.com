@@ -74,3 +74,6 @@ src_dir:
 # spec_dir: spec/javascripts
 #
 spec_dir:
+
+
+root_dir: public
