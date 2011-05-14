@@ -3630,7 +3630,7 @@ window['GL_METHODS'] = {};
     var gl = canvas.getContext(WEBGL_CONTEXT_NAME);
   } catch(e) {
     document.location.pathname = "/webgl_not_supported.html";
-    throw new Error("WebGL is disabled or not supported by this browser!");
+    throw new Error("WebGL is disabled or is not supported by this browser!");
   }
 
   if (gl) {
@@ -3673,20 +3673,17 @@ window['GL_METHODS'] = {};
     }
 
     /* define some extra globals that the above didn't generate */
-    window['GL_MAX_VERTEX_ATTRIBS'] = gl.getParameter(gl.MAX_VERTEX_ATTRIBS);
     window['GL_DEPTH_COMPONENT'] = gl.DEPTH_COMPONENT || gl.DEPTH_COMPONENT16;
     window['GL_TEXTURES'] = [];
     for (i = 0; i < 32; i++) window['GL_TEXTURES'][i] = gl["TEXTURE"+i];
     window['GL_MAX_ACTIVE_TEXTURES'] = gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS);
   }
 
-  /* clean up after ourselves */
-  if (temporaryBody)
-    body.parentNode.removeChild(body);
-})();
-
-/* import other webgl files */
-
+  /* import other webgl files */
+  /*
+    note that because of the positioning here, all files in the webgl/ subdirectory will have access to a
+    private, temporary 'gl' context which will be unloaded after they have been loaded into memory.
+   */
 Jax.Shader = (function() {
   function buildStackTrace(context, glShader, source) {
     source = source.split(/\n/);
@@ -3906,7 +3903,7 @@ Jax.Shader = (function() {
                    (this.getRawSource(options, 'vertex')   || "")  + "\n\n" +
                    (this.getRawSource(options, 'fragment') || "");
 
-      var rx = new RegExp("(^|\\n)((shared\\s+)?)(uniform|attribute|varying) (\\w+) ((?!"+prefix+")[^;]*);"), result;
+      var rx = new RegExp("(^|\\n|\\s+)((shared\\s+)?)(uniform|attribute|varying) (\\w+) ((?!"+prefix+")[^;]*);"), result;
       while (result = rx.exec(source)) {
         var shared = /shared/.test(result[2]);
         var scope = result[4];
@@ -3951,6 +3948,14 @@ Jax.Shader = (function() {
     }
   });
 })();
+
+
+Jax.Shader.max_varyings = gl.getParameter(GL_MAX_VARYING_VECTORS);
+Jax.Shader.max_vertex_uniforms = gl.getParameter(GL_MAX_VERTEX_UNIFORM_VECTORS);
+Jax.Shader.max_fragment_uniforms = gl.getParameter(GL_MAX_FRAGMENT_UNIFORM_VECTORS);
+Jax.Shader.max_attributes = gl.getParameter(GL_MAX_VERTEX_ATTRIBS);
+
+Jax.Shader.max_uniforms = Math.min(Jax.Shader.max_fragment_uniforms, Jax.Shader.max_vertex_uniforms);
 
 Jax.Shader.Delegator = (function() {
   return Jax.Class.create({
@@ -4341,6 +4346,18 @@ Jax.ShaderChain = (function() {
 
       if (!program.linked) {
         var master = this.getMasterShader();
+
+        var numVaryings = this.countVaryings(material),
+            numUniforms = this.countUniforms(material),
+            numAttributes = this.countAttributes(material);
+
+        if (numVaryings > Jax.Shader.max_varyings)
+          throw new RangeError("Varyings ("+numVaryings+") exceed maximum number of varyings ("+Jax.Shader.max_varyings+") supported by GPU! Try using a shorter chain.");
+        if (numUniforms > Jax.Shader.max_uniforms)
+          throw new RangeError("Uniforms ("+numUniforms+") exceed maximum number of uniforms ("+Jax.Shader.max_uniforms+") supported by GPU! Try using a shorter chain.");
+        if (numAttributes > Jax.Shader.max_attributes)
+          throw new RangeError("Attributes ("+numAttributes+") exceed maximum number of attributes ("+Jax.Shader.max_attributes+") supported by GPU! Try using a shorter chain.");
+
         master.setVertexSource(this.getVertexSource(material));
         master.setFragmentSource(this.getFragmentSource(material));
 
@@ -4442,6 +4459,33 @@ Jax.ShaderChain = (function() {
       return source;
     },
 
+    getPerShaderInputMap: function(options) {
+      options = Jax.Util.normalizeOptions(options, {local_prefix:""});
+      var map = {};
+      var tracking_map = {};
+      var name;
+      for (var i = 0; i < this.phases.length; i++) {
+        name = this.phases[i].getName();
+        var entry = (map[name] = map[name] || { uniforms: [], attributes: [], varyings: [] });
+
+        options.local_prefix = this.phases[i].getName()+i;
+
+        var _map = this.phases[i].getInputMap(options);
+        for (name in _map) {
+          var variable = _map[name];
+          if (!tracking_map[variable.full_name]) {
+            if (variable.scope == 'uniform')        entry.uniforms.push(variable);
+            else if (variable.scope == 'attribute') entry.attributes.push(variable);
+            else if (variable.scope == 'varying')   entry.varyings.push(variable);
+            else throw new Error("unhandled variable scope: "+JSON.stringify(variable));
+
+            tracking_map[variable.full_name] = 1;
+          }
+        }
+      }
+      return map;
+    },
+
     getInputMap: function(options) {
       options = Jax.Util.normalizeOptions(options, {local_prefix:""});
       var map = {};
@@ -4449,17 +4493,33 @@ Jax.ShaderChain = (function() {
         options.local_prefix = this.phases[i].getName()+i;
         var _map = this.phases[i].getInputMap(options);
         for (var name in _map) {
-          if (map[_map[name]]) {
-            if (map[name].type      != _map[name].type)
-              throw new Error("Conflicting types for variable '"+name+"' ("+map[name].type+" and "+_map[name].type+")!");
-            if (map[name].scope     != _map[name].scope)
-              throw new Error("Conflicting scopes for variable '"+name+"' ("+map[name].scope+" and "+_map[name].scope+")!");
+          var variable = _map[name];
+          if (map[variable.full_name]) {
+            if (map[name].type      != variable.type)
+              throw new Error("Conflicting types for variable '"+name+"' ("+map[name].type+" and "+variable.type+")!");
+            if (map[name].scope     != variable.scope)
+              throw new Error("Conflicting scopes for variable '"+name+"' ("+map[name].scope+" and "+variable.scope+")!");
           }
-          else map[_map[name].full_name] = _map[name];
+          else map[variable.full_name] = variable;
         }
       }
       return map;
     },
+
+    countVariables: function(scope, options) {
+      var map = this.getInputMap(options);
+      var count = 0;
+      for (var i in map) {
+        if (map[i].scope == scope) count++;
+      }
+      return count;
+    },
+
+    countVaryings: function(options) { return this.countVariables("varying", options); },
+
+    countAttributes: function(options) { return this.countVariables("attribute", options); },
+
+    countUniforms: function(options) { return this.countVariables("uniform", options); },
 
     gatherExports: function() {
       var result = {};
@@ -4480,6 +4540,21 @@ Jax.Material = (function() {
     self.previous = self.previous || {subshaders:[]};
     for (var i = 0; i < self.layers.length; i++)
       self.previous.subshaders[i] = self.layers[i].getName();
+  }
+
+  function instantiate_layer(options) {
+    if (options.isKindOf && options.isKindOf(Jax.Material))
+      return options;
+    else {
+      if (options.type) {
+        var klass = Jax.Material[options.type];
+        if (!klass) throw new Error("Could not find material layer type: "+options.type);
+        delete options.type;
+        return new klass(options);
+      }
+      else
+        throw new Error("Could not create layer: property 'type' was missing!");
+    }
   }
 
   return Jax.Class.create({
@@ -4520,16 +4595,7 @@ Jax.Material = (function() {
 
       if (options.layers) {
         for (i = 0; i < options.layers.length; i++) {
-          if (options.layers[i].isKindOf && options.layers[i].isKindOf(Jax.Material))
-            this.addLayer(options.layers[i]);
-          else {
-            if (options.layers[i].type) {
-              var klass = Jax.Material[options.layers[i].type];
-              if (!klass) throw new Error("Could not find material layer type: "+options.layers[i].type);
-              delete options.layers[i].type;
-              this.addLayer(new klass(options.layers[i]));
-            }
-          }
+          this.addLayer(instantiate_layer(options.layers[i]));
         }
       }
     },
@@ -4549,6 +4615,7 @@ Jax.Material = (function() {
     },
 
     addLayer: function(layer) {
+      if (!layer.option_properties) layer = instantiate_layer(layer);
       this.layers.push(layer);
 
       for (var i = 0; i < layer.option_properties.length; i++) {
@@ -4571,9 +4638,13 @@ Jax.Material = (function() {
     },
 
     addShadersToChain: function(chain) {
-      this.shader_variable_prefix = chain.addShader(this.shader || this.default_shader);
+      this.shader_variable_prefix = chain.addShader(this.getBaseShader());
       for (var i = 0; i < this.layers.length; i++)
         this.layers[i].addShadersToChain(chain);
+    },
+
+    getBaseShader: function() {
+      return (this.shader || this.default_shader);
     },
 
     updateModifiedShaders: function() {
@@ -4598,7 +4669,6 @@ Jax.Material = (function() {
     setAttributes: function(context, mesh, options, attributes) { },
 
     setShaderVariables: function(context, mesh, options, manifest) {
-      var light = context.world.lighting.getLight();
       manifest.variable_prefix = this.shader_variable_prefix;
 
       manifest.set({
@@ -4615,21 +4685,7 @@ Jax.Material = (function() {
         materialAmbient: this.ambient,
         materialDiffuse: this.diffuse,
         materialSpecular: this.specular,
-        materialShininess: this.shininess,
-
-        'LIGHTING_ENABLED': context.world.lighting.isEnabled() && !(options.unlit),
-        'LIGHT.position': light.getPosition(),
-        'LIGHT.direction': light.getDirection(),
-        'LIGHT.ambient': light.getAmbientColor(),
-        'LIGHT.diffuse': light.getDiffuseColor(),
-        'LIGHT.specular': light.getSpecularColor(),
-        'LIGHT.constant_attenuation': light.getConstantAttenuation(),
-        'LIGHT.linear_attenuation': light.getLinearAttenuation(),
-        'LIGHT.quadratic_attenuation': light.getQuadraticAttenuation(),
-        'LIGHT.spotExponent': light.getSpotExponent(),
-        'LIGHT.spotCosCutoff': light.getSpotCosCutoff(),
-        'LIGHT.enabled': light.isEnabled(),
-        'LIGHT.type': light.getType()
+        materialShininess: this.shininess
       });
       manifest.set('VERTEX_POSITION',  mesh.getVertexBuffer() || null);
       manifest.set('VERTEX_COLOR',     mesh.getColorBuffer() || null);
@@ -4651,13 +4707,74 @@ Jax.Material = (function() {
       this.lights = context.world.lighting._lights;
       this.light_count = context.world.lighting._lights.length;
 
-      var shader = this.prepareShader(context);
+      try {
+        var shader = this.prepareShader(context);
 
-      shader.render(context, mesh, this, options);
+        shader.render(context, mesh, this, options);
+      } catch(error) {
+        if (error instanceof RangeError) {
+          if (this.layers.length > 0) {
+            this.adaptShaderToHardwareLimits(shader, error);
+            this.render(context, mesh, options);
+          }
+          else throw error;
+        }
+        else throw error;
+      }
+    },
+
+    adaptShaderToHardwareLimits: function(shader, error) {
+      function log(msg) {
+        if (window.console)
+          console.log(msg);
+        else
+          setTimeout(function() { throw new Error(msg); }, 1);
+      }
+
+      log("WARNING: Hardware limits reached for material '"+this.getName()+"'! (original message: "+error+")");
+
+      /*
+        choose which shader(s) to remove. We know off the bat that we can remove any shaders which would
+        push us over the threshold on their own (e.g. not combined with any except 'basic'), so let's remove
+        those first.
+      */
+
+      var map = shader.getPerShaderInputMap(this);
+
+      var uniformsRemaining = Jax.Shader.max_uniforms - map[this.getBaseShader()].uniforms.length;
+      var varyingsRemaining = Jax.Shader.max_varyings - map[this.getBaseShader()].varyings.length;
+      var attributesRemaining = Jax.Shader.max_attributes - map[this.getBaseShader()].attributes.length;
+
+      var totalUniformsInUse = 0, totalVaryingsInUse = 0, totalAttributesInUse = 0;
+
+      for (var i = 0; i < this.layers.length; i++) {
+        var entry = map[this.layers[i].getBaseShader()];
+
+        if (entry.uniforms.length > uniformsRemaining || entry.varyings.length > varyingsRemaining ||
+                entry.attributes.length > attributesRemaining)
+        {
+          log("WARNING: Removing shader '"+this.layers[i].getName()+"' due to hardware limitations!");
+          this.layers.splice(i, 1);
+          i = 0;
+        } else {
+          totalUniformsInUse += entry.uniforms.length;
+          totalVaryingsInUse += entry.varyings.length;
+          totalAttributesInUse += entry.attributes.length;
+        }
+      }
+
+      if (totalUniformsInUse > uniformsRemaining || totalVaryingsInUse > varyingsRemaining ||
+              totalAttributesInUse > attributesRemaining)
+      {
+        log("WARNING: Removing shader '"+this.layers[this.layers.length-1].getName()+"' due to hardware limitations!");
+        this.layers.pop();
+      }
     },
 
     isChanged: function() {
       if (!this.previous) return true;
+
+      if (this.previous.subshaders.length != this.layers.length) return true;
 
       for (var i = 0; i < this.layers.length; i++)
         if (this.previous.subshaders[i] != this.layers[i].getName())
@@ -6736,6 +6853,13 @@ Jax.Texture = (function() {
 })();
 
 Jax.Texture._level = 0;
+
+  /* clean up after ourselves */
+  if (temporaryBody)
+    body.parentNode.removeChild(body);
+  else
+    body.removeChild(canvas);
+})();
 Jax.EVENT_METHODS = (function() {
   function getCumulativeOffset(element) {
     var valueT = 0, valueL = 0;
@@ -7384,40 +7508,29 @@ Jax.Mesh.Teapot = (function() {
  */
 var LightSource = Jax.Scene.LightSource;
 var Material = Jax.Material;
-Jax.shaders['basic'] = new Jax.Shader({  common:"shared uniform mat4 ivMatrix, mvMatrix, pMatrix, vMatrix;\nshared uniform mat3 vnMatrix, nMatrix;\n\nshared uniform vec4 materialDiffuse, materialAmbient, materialSpecular;\nshared uniform float materialShininess;\n\nshared uniform int PASS_TYPE;\n\nshared varying vec2 vTexCoords;\nshared varying vec3 vNormal, vLightDir, vSurfacePos;\nshared varying vec4 vBaseColor;\n\nconst struct LightSource {\n  int enabled;\n  int type;\n  vec3 position; // in world space\n  vec3 direction; // in world space\n  vec4 ambient, diffuse, specular;\n  float constant_attenuation, linear_attenuation, quadratic_attenuation;\n  float spotExponent, spotCosCutoff;\n};\n\nfloat calcAttenuation(const in LightSource light,\n                      in vec3 ecPosition3,\n                      out vec3 lightDirection)\n{\n//  lightDirection = vec3(vnMatrix * -light.position) - ecPosition3;\n  lightDirection = vec3(ivMatrix * vec4(light.position, 1.0)) - ecPosition3;\n  float d = length(lightDirection);\n  \n  return 1.0 / (light.constant_attenuation + light.linear_attenuation * d + light.quadratic_attenuation * d * d);\n}\n\nvoid DirectionalLight(const in LightSource light,\n                      in vec3 normal,\n                      inout vec4 ambient,\n                      inout vec4 diffuse,\n                      inout vec4 specular)\n{\n  if (PASS_TYPE == <%=Jax.Scene.AMBIENT_PASS%>)\n    ambient += light.ambient;\n  else {\n    vec3 nLDir = normalize(vnMatrix * -normalize(light.direction));\n    vec3 halfVector = normalize(nLDir + vec3(0,0,1));\n    float pf;\n    \n    float NdotD  = max(0.0, dot(normal, nLDir));\n    float NdotHV = max(0.0, dot(normal, halfVector));\n    \n    if (NdotD == 0.0) pf = 0.0;\n    else pf = pow(NdotHV, materialShininess);\n    \n    diffuse += light.diffuse * NdotD;\n    specular += light.specular * pf;\n  }\n}\n\n/* Use when attenuation != (1,0,0) */\nvoid PointLightWithAttenuation(const in LightSource light,\n                               in vec3 ecPosition3,\n                               in vec3 normal,\n                               inout vec4 ambient,\n                               inout vec4 diffuse,\n                               inout vec4 specular)\n{\n  float NdotD; // normal . light direction\n  float NdotHV;// normal . half vector\n  float pf;    // specular factor\n  float attenuation;\n  vec3 VP;     // direction from surface to light position\n  vec3 halfVector; // direction of maximum highlights\n  \n  attenuation = calcAttenuation(light, ecPosition3, VP);\n  VP = normalize(VP);\n  \n  halfVector = normalize(VP+vec3(0,0,1));\n  NdotD = max(0.0, dot(normal, VP));\n  NdotHV= max(0.0, dot(normal, halfVector));\n  \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n\n  if (PASS_TYPE == <%=Jax.Scene.AMBIENT_PASS%>)\n    ambient += light.ambient * attenuation;\n  else {\n    diffuse += light.diffuse * NdotD * attenuation;\n    specular += light.specular * pf * attenuation;\n  }\n}\n\n/* Use for better performance when attenuation == (1,0,0) */\nvoid PointLightWithoutAttenuation(const in LightSource light,\n                                  in vec3 ecPosition3,\n                                  in vec3 normal,\n                                  inout vec4 ambient,\n                                  inout vec4 diffuse,\n                                  inout vec4 specular)\n{\n  float NdotD; // normal . light direction\n  float NdotHV;// normal . half vector\n  float pf;    // specular factor\n  float d;     // distance from surface to light source\n  vec3 VP;     // direction from surface to light position\n  vec3 halfVector; // direction of maximum highlights\n  \n  VP = vec3(ivMatrix * vec4(light.position, 1.0)) - ecPosition3;\n  d = length(VP);\n  VP = normalize(VP);\n  halfVector = normalize(VP+vec3(0,0,1));\n  NdotD = max(0.0, dot(normal, VP));\n  NdotHV= max(0.0, dot(normal, halfVector));\n  \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n  \n  if (PASS_TYPE == <%=Jax.Scene.AMBIENT_PASS%>)\n    ambient += light.ambient;\n  else {\n    diffuse += light.diffuse * NdotD;\n    specular += light.specular * pf;\n  }\n}\n\nvoid SpotLight(const in LightSource light,\n               in vec3 ecPosition3,\n               in vec3 normal,\n               inout vec4 ambient,\n               inout vec4 diffuse,\n               inout vec4 specular)\n{\n  float NdotD; // normal . light direction\n  float NdotHV;// normal . half vector\n  float pf;    // specular factor\n  float attenuation;\n  vec3 VP;     // direction from surface to light position\n  vec3 halfVector; // direction of maximum highlights\n  float spotDot; // cosine of angle between spotlight\n  float spotAttenuation; // spotlight attenuation factor\n  \n  attenuation = calcAttenuation(light, ecPosition3, VP);\n  VP = normalize(VP);\n  \n  // See if point on surface is inside cone of illumination\n  spotDot = dot(-VP, normalize(vnMatrix*light.direction));\n  if (spotDot < light.spotCosCutoff)\n    spotAttenuation = 0.0;\n  else spotAttenuation = pow(spotDot, light.spotExponent);\n  \n  attenuation *= spotAttenuation;\n  \n  halfVector = normalize(VP+vec3(0,0,1));\n  NdotD = max(0.0, dot(normal, VP));\n  NdotHV= max(0.0, dot(normal, halfVector));\n  \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n  \n  if (PASS_TYPE == <%=Jax.Scene.AMBIENT_PASS%>)\n    ambient += light.ambient * attenuation;\n  else {\n    diffuse += light.diffuse * NdotD * attenuation;\n    specular += light.specular * pf * attenuation;\n  }\n}\n\n\n\nshared uniform bool LIGHTING_ENABLED;\nshared uniform LightSource LIGHT;\n",
-  fragment:"void main(inout vec4 ambient, inout vec4 diffuse, inout vec4 specular) {\n  ambient = diffuse = specular = vec4(0);\n  \n  vec3 nNormal = normalize(vNormal);\n\n  if (LIGHTING_ENABLED) {\n    if (LIGHT.type == <%=Jax.DIRECTIONAL_LIGHT%>)\n      DirectionalLight(LIGHT, nNormal, ambient, diffuse, specular);\n    else\n      if (LIGHT.type == <%=Jax.POINT_LIGHT%>)\n        if (LIGHT.constant_attenuation == 1.0 && LIGHT.linear_attenuation == 0.0 && LIGHT.quadratic_attenuation == 0.0)\n          PointLightWithoutAttenuation(LIGHT, vSurfacePos, nNormal, ambient, diffuse, specular);\n        else\n          PointLightWithAttenuation(LIGHT, vSurfacePos, nNormal, ambient, diffuse, specular);\n    else\n      if (LIGHT.type == <%=Jax.SPOT_LIGHT%>)\n        SpotLight(LIGHT, vSurfacePos, nNormal, ambient, diffuse, specular);\n    else\n    { // error condition, output 100% red\n      gl_FragColor = vec4(1,0,0,1);\n      return;\n    }\n  } else {\n    ambient = diffuse = specular = vec4(1,1,1,1);\n  }\n\n  // is this correct??\n  ambient.a = 1.0;\n  \n  ambient *= materialAmbient * vBaseColor;\n  diffuse *= materialDiffuse * vBaseColor;\n  specular *= materialSpecular * vBaseColor;\n}\n",
-  vertex:"shared attribute vec2 VERTEX_TEXCOORDS;\nshared attribute vec3 VERTEX_NORMAL;\nshared attribute vec4 VERTEX_POSITION, VERTEX_COLOR, VERTEX_TANGENT;\n\nvoid main(void) {\n  vBaseColor = VERTEX_COLOR;\n  vNormal = nMatrix * VERTEX_NORMAL;\n  vTexCoords = VERTEX_TEXCOORDS;\n                          \n  vLightDir = normalize(vnMatrix * -normalize(LIGHT.direction));\n  vSurfacePos = (mvMatrix * VERTEX_POSITION).xyz;\n\n  gl_Position = pMatrix * mvMatrix * VERTEX_POSITION;\n}\n",
-exports: {},
-name: "basic"});
-Jax.shaders['depthmap'] = new Jax.Shader({  common:"shared uniform mat4 pMatrix;\n",
-  fragment:"vec4 pack_depth(const in float depth)\n{\n  const vec4 bit_shift = vec4(256.0*256.0*256.0, 256.0*256.0, 256.0, 1.0);\n  const vec4 bit_mask  = vec4(0.0, 1.0/256.0, 1.0/256.0, 1.0/256.0);\n  vec4 res = fract(depth * bit_shift);\n  res -= res.xxyz * bit_mask;\n  return res;\n}\n\n/*\nfloat linearize(in float z) {\n  float A = pMatrix[2].z, B = pMatrix[3].z;\n  float n = - B / (1.0 - A); // camera z near\n  float f =   B / (1.0 + A); // camera z far\n  return (2.0 * n) / (f + n - z * (f - n));\n}\n*/\n\nfloat unpack_depth(const in vec4 rgba_depth)\n{\n  const vec4 bit_shift = vec4(1.0/(256.0*256.0*256.0), 1.0/(256.0*256.0), 1.0/256.0, 1.0);\n  float depth = dot(rgba_depth, bit_shift);\n  return depth;\n}\n\n\n\nvoid main(void) {\n  gl_FragColor = pack_depth(gl_FragCoord.z);\n}\n",
-  vertex:"shared attribute vec4 VERTEX_POSITION;\n    \nshared uniform mat4 mvMatrix;\n            \nvoid main(void) {\n  gl_Position = pMatrix * mvMatrix * VERTEX_POSITION;\n}\n",
-exports: {},
-name: "depthmap"});
-Jax.shaders['fog'] = new Jax.Shader({  common:"uniform vec4 FogColor;\n\nuniform int Algorithm;\n\nuniform float Scale;\nuniform float End;\nuniform float Density;\n\nvarying vec3 vFogFactor;\n",
-  fragment:"const float LOG2 = 1.442695;\n\nvoid main(inout vec4 ambient, inout vec4 diffuse, inout vec4 specular) {\n  float fog;\n  float distance = length(gl_FragCoord.z / gl_FragCoord.w);\n\n  if (Algorithm == <%=Jax.LINEAR%>) {\n    fog = (End - distance) * Scale;\n  } else if (Algorithm == <%=Jax.EXPONENTIAL%>) {\n    fog = exp(-Density * distance);\n  } else if (Algorithm == <%=Jax.EXP2%>) {\n    fog = exp2(-Density * Density * distance * distance * LOG2);\n  } else {\n    /* error condition, output red */\n    ambient = diffuse = specular = vec4(1,0,0,1);\n    return;\n  }\n\n  fog = clamp(fog, 0.0, 1.0);\n  \n  ambient  = mix(FogColor,  ambient,  fog);\n  diffuse  = mix(FogColor,  diffuse,  fog);\n}\n",
-  vertex:"shared attribute vec4 VERTEX_POSITION;\n\nshared uniform mat4 mvMatrix, pMatrix;\n\nconst float LOG2 = 1.442695;\n\nvoid main(void) {\n  vec4 pos = mvMatrix * VERTEX_POSITION;\n  gl_Position = pMatrix * pos;\n}\n",
-exports: {},
-name: "fog"});
-Jax.shaders['functions'] = new Jax.Shader({exports: {},
-name: "functions"});
-Jax.shaders['normal_map'] = new Jax.Shader({  common:"uniform sampler2D NormalMap;\n\nshared uniform mat4 mvMatrix, pMatrix;\nshared uniform mat3 nMatrix, vMatrix;\n\nshared uniform LightSource LIGHT;\n\nshared varying vec2 vTexCoords;\n\nvarying vec3 vEyeDir;\nvarying vec3 vLightDir;\nvarying float vAttenuation;\n\n",
-  fragment:"void main(inout vec4 ambient, inout vec4 diffuse, inout vec4 specular) {\n  // ambient was applied by the basic shader; applying it again will simply brighten some fragments\n  // beyond their proper ambient value. So, we really need to apply the bump shader ONLY to diffuse+specular.\n\n  if (PASS_TYPE == <%=Jax.Scene.AMBIENT_PASS%>) return;\n  \n  vec3 nLightDir = normalize(vLightDir);\n  vec3 nEyeDir = normalize(vEyeDir);\n  vec4 color = texture2D(NormalMap, vTexCoords);\n  vec3 map = nMatrix * normalize(color.xyz * 2.0 - 1.0);\n\n  float litColor = max(dot(map, nLightDir), 0.0) * vAttenuation;\n\n  // specular\n  vec3 reflectDir = reflect(nLightDir, map);\n  float spec = max(dot(nEyeDir, reflectDir), 0.0);\n  spec = pow(spec, materialShininess);\n  // Treat alpha in the normal map as a specular map; if it's unused it will be 1 and this\n  // won't matter.\n  spec *= color.a;\n  litColor = min(litColor+spec, 1.0);\n  \n  diffuse *= litColor;\n  specular *= litColor;\n}\n",
-  vertex:"shared attribute vec4 VERTEX_POSITION;\nshared attribute vec2 VERTEX_TEXCOORDS;\nshared attribute vec4 VERTEX_TANGENT;\nshared attribute vec3 VERTEX_NORMAL;\n\nvoid main(void) {\n  // ambient was applied by the basic shader; applying it again will simply brighten some fragments\n  // beyond their proper ambient value. So, we really need to apply the bump shader ONLY to diffuse+specular.\n\n  if (PASS_TYPE == <%=Jax.Scene.AMBIENT_PASS%>) return;\n\n  vec3 ecPosition = vec3(mvMatrix * VERTEX_POSITION);\n\n  gl_Position = pMatrix * mvMatrix * VERTEX_POSITION;\n  vTexCoords = VERTEX_TEXCOORDS;\n\n  vEyeDir = vec3(mvMatrix * VERTEX_POSITION);\n  \n  vec3 n = normalize(nMatrix * VERTEX_NORMAL);\n  vec3 t = normalize(nMatrix * VERTEX_TANGENT.xyz);\n  vec3 b = cross(n, t) * VERTEX_TANGENT.w;\n  \n  vec3 v, p;\n  \n  vAttenuation = 1.0;\n  \n  if (LIGHT.type == <%=Jax.POINT_LIGHT%>)\n    if (LIGHT.constant_attenuation == 1.0 && LIGHT.linear_attenuation == 0.0 && LIGHT.quadratic_attenuation == 0.0) {\n      // no change to attenuation, but we still need P\n      p = vec3(ivMatrix * vec4(LIGHT.position, 1.0)) - ecPosition;\n    }\n    else {\n      // attenuation calculation figures out P for us, so we may as well use it\n      vAttenuation = calcAttenuation(LIGHT, ecPosition, p);\n    }\n  else\n    if (LIGHT.type == <%=Jax.SPOT_LIGHT%>) {\n      // attenuation calculation figures out P for us, so we may as well use it\n      vAttenuation = calcAttenuation(LIGHT, ecPosition, p);\n    }\n    else\n    { // directional light -- all we need is P\n      p = vec3(vnMatrix * -normalize(LIGHT.direction));\n    }\n    \n    \n    \n  v.x = dot(p, t);\n  v.y = dot(p, b);\n  v.z = dot(p, n);\n  vLightDir = normalize(p);\n  \n  v.x = dot(vEyeDir, t);\n  v.y = dot(vEyeDir, b);\n  v.z = dot(vEyeDir, n);\n  vEyeDir = normalize(v);\n}\n",
-exports: {},
-name: "normal_map"});
-Jax.shaders['paraboloid-depthmap'] = new Jax.Shader({  common:"shared uniform mat4 mvMatrix;\nshared uniform float DP_SHADOW_NEAR, DP_SHADOW_FAR;\nshared uniform float DP_DIRECTION;\n\nshared varying float vClip;\nshared varying vec4 vPos;\n",
-  fragment:"vec4 pack_depth(const in float depth)\n{\n  const vec4 bit_shift = vec4(256.0*256.0*256.0, 256.0*256.0, 256.0, 1.0);\n  const vec4 bit_mask  = vec4(0.0, 1.0/256.0, 1.0/256.0, 1.0/256.0);\n  vec4 res = fract(depth * bit_shift);\n  res -= res.xxyz * bit_mask;\n  return res;\n}\n\n/*\nfloat linearize(in float z) {\n  float A = pMatrix[2].z, B = pMatrix[3].z;\n  float n = - B / (1.0 - A); // camera z near\n  float f =   B / (1.0 + A); // camera z far\n  return (2.0 * n) / (f + n - z * (f - n));\n}\n*/\n\nfloat unpack_depth(const in vec4 rgba_depth)\n{\n  const vec4 bit_shift = vec4(1.0/(256.0*256.0*256.0), 1.0/(256.0*256.0), 1.0/256.0, 1.0);\n  float depth = dot(rgba_depth, bit_shift);\n  return depth;\n}\n\n\n\nvoid main(void) {\n  /* because we do our own projection, we also have to do our own clipping */\n  /* if vClip is less than 0, it's behind the near plane and can be dropped. */\n  if (vClip < 0.0) discard;\n  gl_FragColor = pack_depth(vPos.z);\n}\n",
-  vertex:"shared attribute vec4 VERTEX_POSITION;\n                \nvoid main(void) {\n  /*\n    we do our own projection to form the paraboloid, so we\n    can ignore the projection matrix entirely.\n   */\n  vec4 pos = mvMatrix * VERTEX_POSITION;\n\n  pos = vec4(pos.xyz / pos.w, pos.w);\n\n  pos.z *= DP_DIRECTION;\n\n  float L = length(pos.xyz);\n  pos /= L;\n  vClip = pos.z;\n\n  pos.z += 1.0;\n  pos.x /= pos.z;\n  pos.y /= pos.z;\n  pos.z = (L - DP_SHADOW_NEAR) / (DP_SHADOW_FAR - DP_SHADOW_NEAR);\n  pos.w = 1.0;\n\n  vPos = pos;\n  gl_Position = pos;\n}\n",
-exports: {},
-name: "paraboloid-depthmap"});
-Jax.shaders['shadow_map'] = new Jax.Shader({  common:"shared uniform mat4 mMatrix;\n\nuniform bool SHADOWMAP_ENABLED;\nuniform sampler2D SHADOWMAP0, SHADOWMAP1;\nuniform mat4 SHADOWMAP_MATRIX;\nuniform bool SHADOWMAP_PCF_ENABLED;\nuniform float DP_SHADOW_NEAR, DP_SHADOW_FAR;\n\nvarying vec4 vShadowCoord;\n\nvarying vec3 vDP0, vDP1;\nvarying float vDPz, vDPDepth;\n",
-  fragment:"vec4 pack_depth(const in float depth)\n{\n  const vec4 bit_shift = vec4(256.0*256.0*256.0, 256.0*256.0, 256.0, 1.0);\n  const vec4 bit_mask  = vec4(0.0, 1.0/256.0, 1.0/256.0, 1.0/256.0);\n  vec4 res = fract(depth * bit_shift);\n  res -= res.xxyz * bit_mask;\n  return res;\n}\n\n/*\nfloat linearize(in float z) {\n  float A = pMatrix[2].z, B = pMatrix[3].z;\n  float n = - B / (1.0 - A); // camera z near\n  float f =   B / (1.0 + A); // camera z far\n  return (2.0 * n) / (f + n - z * (f - n));\n}\n*/\n\nfloat unpack_depth(const in vec4 rgba_depth)\n{\n  const vec4 bit_shift = vec4(1.0/(256.0*256.0*256.0), 1.0/(256.0*256.0), 1.0/256.0, 1.0);\n  float depth = dot(rgba_depth, bit_shift);\n  return depth;\n}\n\n\n\nfloat dp_lookup() {\n  float map_depth, depth;\n  vec4 rgba_depth;\n      \n  if (vDPz > 0.0) {\n    rgba_depth = texture2D(SHADOWMAP0, vDP0.xy);\n    depth = vDPDepth;//P0.z;\n  } else {\n    rgba_depth = texture2D(SHADOWMAP1, vDP1.xy);\n    depth = vDPDepth;//P1.z;\n  }\n      \n      \n  map_depth = unpack_depth(rgba_depth);\n      \n  if (map_depth + 0.00005 < depth) return 0.0;\n  else return 1.0;\n}\n      \nfloat pcf_lookup(float s, vec2 offset) {\n  /*\n    s is the projected depth of the current vShadowCoord relative to the shadow's camera. This represents\n    a *potentially* shadowed surface about to be drawn.\n    \n    d is the actual depth stored within the SHADOWMAP texture (representing the visible surface).\n  \n    if the surface to be drawn is further back than the light-visible surface, then the surface is\n    shadowed because it has a greater depth. Less-or-equal depth means it's either in front of, or it *is*\n    the light-visible surface.\n  */\n  float d = unpack_depth(texture2D(SHADOWMAP0, (vShadowCoord.xy/vShadowCoord.w)+offset));\n  return (s - d > 0.00002) ? 0.0 : 1.0;\n}\n\nvoid main(inout vec4 ambient, inout vec4 diffuse, inout vec4 specular) {\n//ambient = vec4(0);\n  if (PASS_TYPE == <%=Jax.Scene.AMBIENT_PASS%> || !SHADOWMAP_ENABLED) return;\n  \n  float visibility = 1.0;\n  float s = vShadowCoord.z / vShadowCoord.w;\n  if (LIGHT.type == <%=Jax.POINT_LIGHT%>) {\n    visibility = dp_lookup();\n  } else {\n    if (!SHADOWMAP_PCF_ENABLED)\n      visibility = pcf_lookup(s, vec2(0.0,0.0));\n    else {\n      /* do PCF filtering */\n      float dx, dy;\n      visibility = 0.0;\n      for (float dx = -1.5; dx <= 1.5; dx += 1.0)\n        for (float dy = -1.5; dy <= 1.5; dy += 1.0)\n          visibility += pcf_lookup(s, vec2(dx/2048.0, dy/2048.0));\n      visibility /= 16.0;\n    }\n  }\n\n//  if (vDPz > 0.0) {\n//    diffuse = texture2D(SHADOWMAP0, vDP0.xy);\n//  } else {\n//    diffuse = texture2D(SHADOWMAP1, vDP1.xy);\n//  }\n//  specular = vec4(0);\n\n  diffuse *= visibility;\n  specular *= visibility;\n\n//diffuse = vec4(vShadowCoord.xy/vShadowCoord.w, 0, 1);\n//diffuse = max(texture2D(SHADOWMAP0, (vShadowCoord.xy/vShadowCoord.w)), texture2D(SHADOWMAP1, (vShadowCoord.xy/vShadowCoord.w)));\n//  diffuse  = vec4(visibility);\n//  specular = vec4(0);\n//  specular *= visibility;\n}\n",
-  vertex:"void main(void) {\n  if (PASS_TYPE == <%=Jax.Scene.AMBIENT_PASS%> || !SHADOWMAP_ENABLED) return;\n\n  vShadowCoord = SHADOWMAP_MATRIX * mMatrix * VERTEX_POSITION;\n  \n//  if (LIGHT.type == <%=Jax.POINT_LIGHT%>) {\n    /* Perform dual-paraboloid shadow map calculations - for point lights only */\n    vec4 p = vShadowCoord;\n    vec3 pos = p.xyz / p.w;\n          \n    float L = length(pos.xyz);\n    vDP0 = pos / L;\n    vDP1 = pos / L;\n          \n    vDPz = pos.z;\n          \n    vDP0.z = 1.0 + vDP0.z;\n    vDP0.x /= vDP0.z;\n    vDP0.y /= vDP0.z;\n    vDP0.z = (L - DP_SHADOW_NEAR) / (DP_SHADOW_FAR - DP_SHADOW_NEAR);\n          \n    vDP0.x =  0.5 * vDP0.x + 0.5;\n    vDP0.y =  0.5 * vDP0.y + 0.5;\n          \n    vDP1.z = 1.0 - vDP1.z;\n    vDP1.x /= vDP1.z;\n    vDP1.y /= vDP1.z;\n    vDP1.z = (L - DP_SHADOW_NEAR) / (DP_SHADOW_FAR - DP_SHADOW_NEAR);\n      \n    vDP1.x =  0.5 * vDP1.x + 0.5;\n    vDP1.y =  0.5 * vDP1.y + 0.5;\n          \n    float map_depth, depth;\n    vec4 rgba_depth;\n          \n    if (vDPz > 0.0) {\n      vDPDepth = vDP0.z;\n    } else {\n      vDPDepth = vDP1.z;\n    }\n//  }\n}\n",
-exports: {},
-name: "shadow_map"});
-Jax.shaders['texture'] = new Jax.Shader({  common:"uniform sampler2D Texture;\nuniform float TextureScaleX, TextureScaleY;\n\nshared varying vec2 vTexCoords;\n",
-  fragment:"void main(inout vec4 ambient, inout vec4 diffuse, inout vec4 specular) {\n  vec4 t = texture2D(Texture, vTexCoords * vec2(TextureScaleX, TextureScaleY));\n\n  ambient  *= t;\n  diffuse  *= t;\n  specular *= t;\n \n  ambient.a  *= t.a;\n  diffuse.a  *= t.a;\n  specular.a *= t.a;\n}\n",
-  vertex:"shared attribute vec4 VERTEX_POSITION;\nshared attribute vec2 VERTEX_TEXCOORDS;\n\nshared uniform mat4 mvMatrix, pMatrix;\n\nvoid main(void) {\n  gl_Position = pMatrix * mvMatrix * VERTEX_POSITION;\n  vTexCoords = VERTEX_TEXCOORDS;\n}\n",
-exports: {},
-name: "texture"});
+Jax.Material.Lighting = Jax.Class.create(Jax.Material, {
+  initialize: function($super) {
+    $super({shader: "lighting"});
+  },
+
+  setUniforms: function($super, context, mesh, options, uniforms) {
+    $super(context, mesh, options, uniforms);
+
+    var light = context.world.lighting.getLight();
+    uniforms.set({
+      LIGHTING_ENABLED: context.world.lighting.isEnabled() && !(options.unlit),
+      LIGHT_POSITION: light.getPosition(),
+      LIGHT_DIRECTION: light.getDirection(),
+      LIGHT_AMBIENT: light.getAmbientColor(),
+      LIGHT_DIFFUSE: light.getDiffuseColor(),
+      LIGHT_SPECULAR: light.getSpecularColor(),
+      LIGHT_ATTENUATION_CONSTANT: light.getConstantAttenuation(),
+      LIGHT_ATTENUATION_LINEAR: light.getLinearAttenuation(),
+      LIGHT_ATTENUATION_QUADRATIC: light.getQuadraticAttenuation(),
+      LIGHT_SPOT_EXPONENT: light.getSpotExponent(),
+      LIGHT_SPOT_COS_CUTOFF: light.getSpotCosCutoff(),
+      LIGHT_ENABLED: light.isEnabled(),
+      LIGHT_TYPE: light.getType()
+    });
+  }
+});

@@ -4,10 +4,6 @@ var DungeonController = (function() {
   return Jax.Controller.create("dungeon", ApplicationController, {
     index: function() {
       var material = Jax.Material.find("rock");
-      material.layers[0].texture.options.wrap_s = GL_REPEAT;
-      material.layers[0].texture.options.wrap_t = GL_REPEAT;
-      material.layers[1].map.options.wrap_s = GL_REPEAT;
-      material.layers[1].map.options.wrap_t = GL_REPEAT;
       this.movement = { left: 0, right: 0, forward: 0, backward: 0 };
       
       this.dungeon = new Dungeon();

@@ -23,8 +23,14 @@ layers:
     path: "/images/rock.png"
     scale_x: 1.0
     scale_y: 1.0
+    wrap_s: GL_REPEAT
+    wrap_t: GL_REPEAT
     
+  - type: Lighting
+
   - type: NormalMap
     path: "/images/rockNormal.png"
     scale_x: 1.0
     scale_y: 1.0
+    wrap_s: GL_REPEAT
+    wrap_t: GL_REPEAT
