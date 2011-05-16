@@ -41,7 +41,7 @@ var DungeonController = (function() {
     },
 
     mouse_moved: function(event) {
-      this.context.player.camera.rotate(0.05, this.context.mouse.diffy, -this.context.mouse.diffx, 0);
+      this.context.player.camera.rotate(0.01, this.context.mouse.diffy, -this.context.mouse.diffx, 0);
     },
 
     key_down: function(event) {
