@@ -1,9 +1,9 @@
 //= require "application_controller"
-
 var DungeonController = (function() {
+var material;
   return Jax.Controller.create("dungeon", ApplicationController, {
     index: function() {
-      var material = Jax.Material.find("rock");
+      material = Jax.Material.find("rock");
       this.movement = { left: 0, right: 0, forward: 0, backward: 0 };
       
       this.dungeon = new Dungeon();

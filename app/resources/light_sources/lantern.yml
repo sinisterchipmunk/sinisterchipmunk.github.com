@@ -11,7 +11,7 @@ type: POINT_LIGHT
 
 attenuation:
   constant: 0
-  linear: 1
+  linear: 2
   quadratic: 0
 
 color:
