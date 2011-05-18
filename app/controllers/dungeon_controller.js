@@ -38,10 +38,10 @@ var DungeonController = (function() {
     // Some special actions are fired whenever the corresponding input is
     // received from the user.
     mouse_moved: function(event) {
-      this.context.player.camera.rotate(0.05, this.context.mouse.diffy, -this.context.mouse.diffx, 0);
+      this.context.player.camera.rotate(0.01, this.context.mouse.diffy, -this.context.mouse.diffx, 0);
     },
     
-    key_down: function(event) {
+    key_pressed: function(event) {
       switch(event.keyCode) {
         case KeyEvent.DOM_VK_UP:
         case KeyEvent.DOM_VK_W:

@@ -1,3 +1,3 @@
-var DungeonHelper = Jax.ViewHelper.create({
+var DungeonHelper = Jax.Helper.create({
 
 });

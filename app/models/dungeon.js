@@ -201,8 +201,8 @@ var Dungeon = (function() {
     },
     
     orientPlayer: function(player) {
-      var pos = this.playerStart.position.split(/,\s*/);
-      var dir = this.playerStart.direction.split(/,\s*/);
+      var pos = this.player_start.position.split(/,\s*/);
+      var dir = this.player_start.direction.split(/,\s*/);
       
       player.camera.setPosition([pos[0], 0.5, pos[1]]);
       player.camera.orient([dir[0], 0, dir[1]]);

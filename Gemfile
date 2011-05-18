@@ -1,3 +1,3 @@
-#source "http://rubygems.org"
+source "http://rubygems.org"
 
-gem 'jax', '0.0.0.1'
+gem 'jax', '0.0.0.2'
