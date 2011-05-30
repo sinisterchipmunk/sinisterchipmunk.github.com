@@ -1,6 +1,17 @@
 <html>
   <head>
     <title>Meadow</title>
+    <script type="text/javascript">
+     if (/Win/i.test(navigator.platform)) {
+        alert("Both Firefox and Chrome use ANGLE to emulate OpenGL on Windows. "+
+              "ANGLE doesn't yet support texture lookups in the vertex shader, which is required "+
+              "for this demo, so it probably won't work. \n\n"+
+              "If you can't run the demo, try again with either Linux or "+
+              "a Mac -- and complain to ANGLE about not supporting vertex texture lookups. You "+
+              "can bug them at: http://code.google.com/p/angleproject/ \n\n"+
+              "PS -- if ANGLE implements VTL before I can update this demo, please disregard this message.");
+     }
+    </script>
     <script type="text/javascript" src="/javascripts/jax.js"></script>
     <script type="text/javascript" src="/javascripts/meadow.js"></script>
     <script type="text/javascript">
