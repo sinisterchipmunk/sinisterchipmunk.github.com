@@ -1,3 +1,3 @@
 source "http://rubygems.org"
 
-gem 'jax', '0.0.0.4'
+gem 'jax', '0.0.0.7'

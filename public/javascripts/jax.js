@@ -1,8 +1,30 @@
-var Jax = { PRODUCTION: 1 };
+
+var Jax = { PRODUCTION: 1, VERSION: "0.0.0.7" };
+
+/* Called by Jax applications as of version 0.0.0.5 to alert the user to incomplete upgrades */
+Jax.doVersionCheck = function(targetVersion) {
+  if (Jax.environment && Jax.environment == Jax.PRODUCTION) return;
+
+  if (Jax.VERSION != targetVersion) {
+    alert("Jax version mismatch!\n\n" +
+          "Your Jax gem is version "+targetVersion+", but the Jax JS library is version "+Jax.VERSION+"!\n\n" +
+          "Please run `rake jax:update` at the command line to fix this issue.");
+  }
+};
 
 Jax.default_shader = "basic";
 
 /* Defines constants, functions, etc. that may exist in one browser but not in another */
+Jax.Compatibility = (function() {
+  var offsetTop = 1;
+  var offsetLeft = 1;
+
+  return {
+    offsetTop: offsetTop,
+
+    offsetLeft: offsetLeft,
+  };
+})();
 
 /*
   Object.keys defined only in the newest browsers. If they're going to fail, let them fail due to HTML5 incompatibility
@@ -16,6 +38,11 @@ if (!Object.keys) {
     return arr;
   };
 }
+
+Array.prototype.clear = Array.prototype.clear || function() {
+  this.splice(0, this.length);
+  return this;
+};
 
 
 /* KeyEvent in Firefox contains various keyCode constants, but they are missing in Chrome. */
@@ -879,22 +906,8 @@ if(typeof Float32Array != 'undefined') {
 	glMatrixArrayType = Array;
 }
 
-/*
- * vec3 - 3 Dimensional Vector
- */
 var vec3 = {};
 
-/*
- * vec3.create
- * Creates a new instance of a vec3 using the default array type
- * Any javascript array containing at least 3 numeric elements can serve as a vec3
- *
- * Params:
- * vec - Optional, vec3 containing values to initialize with
- *
- * Returns:
- * New vec3
- */
 vec3.create = function(vec) {
 	var dest = new glMatrixArrayType(3);
 
@@ -907,17 +920,6 @@ vec3.create = function(vec) {
 	return dest;
 };
 
-/*
- * vec3.set
- * Copies the values of one vec3 to another
- *
- * Params:
- * vec - vec3 containing values to copy
- * dest - vec3 receiving copied values
- *
- * Returns:
- * dest
- */
 vec3.set = function(vec, dest) {
 	dest[0] = vec[0];
 	dest[1] = vec[1];
@@ -926,18 +928,6 @@ vec3.set = function(vec, dest) {
 	return dest;
 };
 
-/*
- * vec3.add
- * Performs a vector addition
- *
- * Params:
- * vec - vec3, first operand
- * vec2 - vec3, second operand
- * dest - Optional, vec3 receiving operation result. If not specified result is written to vec
- *
- * Returns:
- * dest if specified, vec otherwise
- */
 vec3.add = function(vec, vec2, dest) {
 	if(!dest || vec == dest) {
 		vec[0] += vec2[0];
@@ -952,18 +942,6 @@ vec3.add = function(vec, vec2, dest) {
 	return dest;
 };
 
-/*
- * vec3.subtract
- * Performs a vector subtraction
- *
- * Params:
- * vec - vec3, first operand
- * vec2 - vec3, second operand
- * dest - Optional, vec3 receiving operation result. If not specified result is written to vec
- *
- * Returns:
- * dest if specified, vec otherwise
- */
 vec3.subtract = function(vec, vec2, dest) {
 	if(!dest || vec == dest) {
 		vec[0] -= vec2[0];
@@ -978,17 +956,6 @@ vec3.subtract = function(vec, vec2, dest) {
 	return dest;
 };
 
-/*
- * vec3.negate
- * Negates the components of a vec3
- *
- * Params:
- * vec - vec3 to negate
- * dest - Optional, vec3 receiving operation result. If not specified result is written to vec
- *
- * Returns:
- * dest if specified, vec otherwise
- */
 vec3.negate = function(vec, dest) {
 	if(!dest) { dest = vec; }
 
@@ -998,18 +965,6 @@ vec3.negate = function(vec, dest) {
 	return dest;
 };
 
-/*
- * vec3.scale
- * Multiplies the components of a vec3 by a scalar value
- *
- * Params:
- * vec - vec3 to scale
- * val - Numeric value to scale by
- * dest - Optional, vec3 receiving operation result. If not specified result is written to vec
- *
- * Returns:
- * dest if specified, vec otherwise
- */
 vec3.scale = function(vec, val, dest) {
 	if(!dest || vec == dest) {
 		vec[0] *= val;
@@ -1024,18 +979,6 @@ vec3.scale = function(vec, val, dest) {
 	return dest;
 };
 
-/*
- * vec3.normalize
- * Generates a unit vector of the same direction as the provided vec3
- * If vector length is 0, returns [0, 0, 0]
- *
- * Params:
- * vec - vec3 to normalize
- * dest - Optional, vec3 receiving operation result. If not specified result is written to vec
- *
- * Returns:
- * dest if specified, vec otherwise
- */
 vec3.normalize = function(vec, dest) {
 	if(!dest) { dest = vec; }
 
@@ -1061,18 +1004,6 @@ vec3.normalize = function(vec, dest) {
 	return dest;
 };
 
-/*
- * vec3.cross
- * Generates the cross product of two vec3s
- *
- * Params:
- * vec - vec3, first operand
- * vec2 - vec3, second operand
- * dest - Optional, vec3 receiving operation result. If not specified result is written to vec
- *
- * Returns:
- * dest if specified, vec otherwise
- */
 vec3.cross = function(vec, vec2, dest){
 	if(!dest) { dest = vec; }
 
@@ -1085,48 +1016,15 @@ vec3.cross = function(vec, vec2, dest){
 	return dest;
 };
 
-/*
- * vec3.length
- * Caclulates the length of a vec3
- *
- * Params:
- * vec - vec3 to calculate length of
- *
- * Returns:
- * Length of vec
- */
 vec3.length = function(vec){
 	var x = vec[0], y = vec[1], z = vec[2];
 	return Math.sqrt(x*x + y*y + z*z);
 };
 
-/*
- * vec3.dot
- * Caclulates the dot product of two vec3s
- *
- * Params:
- * vec - vec3, first operand
- * vec2 - vec3, second operand
- *
- * Returns:
- * Dot product of vec and vec2
- */
 vec3.dot = function(vec, vec2){
 	return vec[0]*vec2[0] + vec[1]*vec2[1] + vec[2]*vec2[2];
 };
 
-/*
- * vec3.direction
- * Generates a unit vector pointing from one vector to another
- *
- * Params:
- * vec - origin vec3
- * vec2 - vec3 to point to
- * dest - Optional, vec3 receiving operation result. If not specified result is written to vec
- *
- * Returns:
- * dest if specified, vec otherwise
- */
 vec3.direction = function(vec, vec2, dest) {
 	if(!dest) { dest = vec; }
 
@@ -1149,19 +1047,6 @@ vec3.direction = function(vec, vec2, dest) {
 	return dest;
 };
 
-/*
- * vec3.lerp
- * Performs a linear interpolation between two vec3
- *
- * Params:
- * vec - vec3, first vector
- * vec2 - vec3, second vector
- * lerp - interpolation amount between the two inputs
- * dest - Optional, vec3 receiving operation result. If not specified result is written to vec
- *
- * Returns:
- * dest if specified, vec otherwise
- */
 vec3.lerp = function(vec, vec2, lerp, dest){
     if(!dest) { dest = vec; }
 
@@ -1172,36 +1057,12 @@ vec3.lerp = function(vec, vec2, lerp, dest){
     return dest;
 }
 
-/*
- * vec3.str
- * Returns a string representation of a vector
- *
- * Params:
- * vec - vec3 to represent as a string
- *
- * Returns:
- * string representation of vec
- */
 vec3.str = function(vec) {
 	return '[' + vec[0] + ', ' + vec[1] + ', ' + vec[2] + ']';
 };
 
-/*
- * mat3 - 3x3 Matrix
- */
 var mat3 = {};
 
-/*
- * mat3.create
- * Creates a new instance of a mat3 using the default array type
- * Any javascript array containing at least 9 numeric elements can serve as a mat3
- *
- * Params:
- * mat - Optional, mat3 containing values to initialize with
- *
- * Returns:
- * New mat3
- */
 mat3.create = function(mat) {
 	var dest = new glMatrixArrayType(9);
 
@@ -1221,17 +1082,6 @@ mat3.create = function(mat) {
 	return dest;
 };
 
-/*
- * mat3.set
- * Copies the values of one mat3 to another
- *
- * Params:
- * mat - mat3 containing values to copy
- * dest - mat3 receiving copied values
- *
- * Returns:
- * dest
- */
 mat3.set = function(mat, dest) {
 	dest[0] = mat[0];
 	dest[1] = mat[1];
@@ -1245,16 +1095,6 @@ mat3.set = function(mat, dest) {
 	return dest;
 };
 
-/*
- * mat3.identity
- * Sets a mat3 to an identity matrix
- *
- * Params:
- * dest - mat3 to set
- *
- * Returns:
- * dest
- */
 mat3.identity = function(dest) {
 	dest[0] = 1;
 	dest[1] = 0;
@@ -1268,17 +1108,6 @@ mat3.identity = function(dest) {
 	return dest;
 };
 
-/*
- * mat4.transpose
- * Transposes a mat3 (flips the values over the diagonal)
- *
- * Params:
- * mat - mat3 to transpose
- * dest - Optional, mat3 receiving transposed values. If not specified result is written to mat
- *
- * Returns:
- * dest is specified, mat otherwise
- */
 mat3.transpose = function(mat, dest) {
 	if(!dest || mat == dest) {
 		var a01 = mat[1], a02 = mat[2];
@@ -1305,17 +1134,6 @@ mat3.transpose = function(mat, dest) {
 	return dest;
 };
 
-/*
- * mat3.toMat4
- * Copies the elements of a mat3 into the upper 3x3 elements of a mat4
- *
- * Params:
- * mat - mat3 containing values to copy
- * dest - Optional, mat4 receiving copied values
- *
- * Returns:
- * dest if specified, a new mat4 otherwise
- */
 mat3.toMat4 = function(mat, dest) {
 	if(!dest) { dest = mat4.create(); }
 
@@ -1342,38 +1160,14 @@ mat3.toMat4 = function(mat, dest) {
 	return dest;
 }
 
-/*
- * mat3.str
- * Returns a string representation of a mat3
- *
- * Params:
- * mat - mat3 to represent as a string
- *
- * Returns:
- * string representation of mat
- */
 mat3.str = function(mat) {
 	return '[' + mat[0] + ', ' + mat[1] + ', ' + mat[2] +
 		', ' + mat[3] + ', '+ mat[4] + ', ' + mat[5] +
 		', ' + mat[6] + ', ' + mat[7] + ', '+ mat[8] + ']';
 };
 
-/*
- * mat4 - 4x4 Matrix
- */
 var mat4 = {};
 
-/*
- * mat4.create
- * Creates a new instance of a mat4 using the default array type
- * Any javascript array containing at least 16 numeric elements can serve as a mat4
- *
- * Params:
- * mat - Optional, mat4 containing values to initialize with
- *
- * Returns:
- * New mat4
- */
 mat4.create = function(mat) {
 	var dest = new glMatrixArrayType(16);
 
@@ -1399,17 +1193,6 @@ mat4.create = function(mat) {
 	return dest;
 };
 
-/*
- * mat4.set
- * Copies the values of one mat4 to another
- *
- * Params:
- * mat - mat4 containing values to copy
- * dest - mat4 receiving copied values
- *
- * Returns:
- * dest
- */
 mat4.set = function(mat, dest) {
 	dest[0] = mat[0];
 	dest[1] = mat[1];
@@ -1430,16 +1213,6 @@ mat4.set = function(mat, dest) {
 	return dest;
 };
 
-/*
- * mat4.identity
- * Sets a mat4 to an identity matrix
- *
- * Params:
- * dest - mat4 to set
- *
- * Returns:
- * dest
- */
 mat4.identity = function(dest) {
 	dest[0] = 1;
 	dest[1] = 0;
@@ -1460,17 +1233,6 @@ mat4.identity = function(dest) {
 	return dest;
 };
 
-/*
- * mat4.transpose
- * Transposes a mat4 (flips the values over the diagonal)
- *
- * Params:
- * mat - mat4 to transpose
- * dest - Optional, mat4 receiving transposed values. If not specified result is written to mat
- *
- * Returns:
- * dest is specified, mat otherwise
- */
 mat4.transpose = function(mat, dest) {
 	if(!dest || mat == dest) {
 		var a01 = mat[1], a02 = mat[2], a03 = mat[3];
@@ -1511,16 +1273,6 @@ mat4.transpose = function(mat, dest) {
 	return dest;
 };
 
-/*
- * mat4.determinant
- * Calculates the determinant of a mat4
- *
- * Params:
- * mat - mat4 to calculate determinant of
- *
- * Returns:
- * determinant of mat
- */
 mat4.determinant = function(mat) {
 	var a00 = mat[0], a01 = mat[1], a02 = mat[2], a03 = mat[3];
 	var a10 = mat[4], a11 = mat[5], a12 = mat[6], a13 = mat[7];
@@ -1535,17 +1287,6 @@ mat4.determinant = function(mat) {
 			a20*a01*a12*a33 - a00*a21*a12*a33 - a10*a01*a22*a33 + a00*a11*a22*a33;
 };
 
-/*
- * mat4.inverse
- * Calculates the inverse matrix of a mat4
- *
- * Params:
- * mat - mat4 to calculate inverse of
- * dest - Optional, mat4 receiving inverse matrix. If not specified result is written to mat
- *
- * Returns:
- * dest is specified, mat otherwise
- */
 mat4.inverse = function(mat, dest) {
 	if(!dest) { dest = mat; }
 
@@ -1589,17 +1330,6 @@ mat4.inverse = function(mat, dest) {
 	return dest;
 };
 
-/*
- * mat4.toRotationMat
- * Copies the upper 3x3 elements of a mat4 into another mat4
- *
- * Params:
- * mat - mat4 containing values to copy
- * dest - Optional, mat4 receiving copied values
- *
- * Returns:
- * dest is specified, a new mat4 otherwise
- */
 mat4.toRotationMat = function(mat, dest) {
 	if(!dest) { dest = mat4.create(); }
 
@@ -1623,17 +1353,6 @@ mat4.toRotationMat = function(mat, dest) {
 	return dest;
 };
 
-/*
- * mat4.toMat3
- * Copies the upper 3x3 elements of a mat4 into a mat3
- *
- * Params:
- * mat - mat4 containing values to copy
- * dest - Optional, mat3 receiving copied values
- *
- * Returns:
- * dest is specified, a new mat3 otherwise
- */
 mat4.toMat3 = function(mat, dest) {
 	if(!dest) { dest = mat3.create(); }
 
@@ -1650,18 +1369,6 @@ mat4.toMat3 = function(mat, dest) {
 	return dest;
 };
 
-/*
- * mat4.toInverseMat3
- * Calculates the inverse of the upper 3x3 elements of a mat4 and copies the result into a mat3
- * The resulting matrix is useful for calculating transformed normals
- *
- * Params:
- * mat - mat4 containing values to invert and copy
- * dest - Optional, mat3 receiving values
- *
- * Returns:
- * dest is specified, a new mat3 otherwise
- */
 mat4.toInverseMat3 = function(mat, dest) {
 	var a00 = mat[0], a01 = mat[1], a02 = mat[2];
 	var a10 = mat[4], a11 = mat[5], a12 = mat[6];
@@ -1690,18 +1397,6 @@ mat4.toInverseMat3 = function(mat, dest) {
 	return dest;
 };
 
-/*
- * mat4.multiply
- * Performs a matrix multiplication
- *
- * Params:
- * mat - mat4, first operand
- * mat2 - mat4, second operand
- * dest - Optional, mat4 receiving operation result. If not specified result is written to mat
- *
- * Returns:
- * dest if specified, mat otherwise
- */
 mat4.multiply = function(mat, mat2, dest) {
 	if(!dest) { dest = mat }
 
@@ -1735,19 +1430,6 @@ mat4.multiply = function(mat, mat2, dest) {
 	return dest;
 };
 
-/*
- * mat4.multiplyVec3
- * Transforms a vec3 with the given matrix
- * 4th vector component is implicitly '1'
- *
- * Params:
- * mat - mat4 to transform the vector with
- * vec - vec3 to transform
- * dest - Optional, vec3 receiving operation result. If not specified result is written to vec
- *
- * Returns:
- * dest if specified, vec otherwise
- */
 mat4.multiplyVec3 = function(mat, vec, dest) {
 	if(!dest) { dest = vec }
 
@@ -1760,18 +1442,6 @@ mat4.multiplyVec3 = function(mat, vec, dest) {
 	return dest;
 };
 
-/*
- * mat4.multiplyVec4
- * Transforms a vec4 with the given matrix
- *
- * Params:
- * mat - mat4 to transform the vector with
- * vec - vec4 to transform
- * dest - Optional, vec4 receiving operation result. If not specified result is written to vec
- *
- * Returns:
- * dest if specified, vec otherwise
- */
 mat4.multiplyVec4 = function(mat, vec, dest) {
 	if(!dest) { dest = vec }
 
@@ -1785,18 +1455,6 @@ mat4.multiplyVec4 = function(mat, vec, dest) {
 	return dest;
 };
 
-/*
- * mat4.translate
- * Translates a matrix by the given vector
- *
- * Params:
- * mat - mat4 to translate
- * vec - vec3 specifying the translation
- * dest - Optional, mat4 receiving operation result. If not specified result is written to mat
- *
- * Returns:
- * dest if specified, mat otherwise
- */
 mat4.translate = function(mat, vec, dest) {
 	var x = vec[0], y = vec[1], z = vec[2];
 
@@ -1832,18 +1490,6 @@ mat4.translate = function(mat, vec, dest) {
 	return dest;
 };
 
-/*
- * mat4.scale
- * Scales a matrix by the given vector
- *
- * Params:
- * mat - mat4 to scale
- * vec - vec3 specifying the scale for each axis
- * dest - Optional, mat4 receiving operation result. If not specified result is written to mat
- *
- * Returns:
- * dest if specified, mat otherwise
- */
 mat4.scale = function(mat, vec, dest) {
 	var x = vec[0], y = vec[1], z = vec[2];
 
@@ -1882,20 +1528,6 @@ mat4.scale = function(mat, vec, dest) {
 	return dest;
 };
 
-/*
- * mat4.rotate
- * Rotates a matrix by the given angle around the specified axis
- * If rotating around a primary axis (X,Y,Z) one of the specialized rotation functions should be used instead for performance
- *
- * Params:
- * mat - mat4 to rotate
- * angle - angle (in radians) to rotate
- * axis - vec3 representing the axis to rotate around
- * dest - Optional, mat4 receiving operation result. If not specified result is written to mat
- *
- * Returns:
- * dest if specified, mat otherwise
- */
 mat4.rotate = function(mat, angle, axis, dest) {
 	var x = axis[0], y = axis[1], z = axis[2];
 	var len = Math.sqrt(x*x + y*y + z*z);
@@ -1945,18 +1577,6 @@ mat4.rotate = function(mat, angle, axis, dest) {
 	return dest;
 };
 
-/*
- * mat4.rotateX
- * Rotates a matrix by the given angle around the X axis
- *
- * Params:
- * mat - mat4 to rotate
- * angle - angle (in radians) to rotate
- * dest - Optional, mat4 receiving operation result. If not specified result is written to mat
- *
- * Returns:
- * dest if specified, mat otherwise
- */
 mat4.rotateX = function(mat, angle, dest) {
 	var s = Math.sin(angle);
 	var c = Math.cos(angle);
@@ -1990,18 +1610,6 @@ mat4.rotateX = function(mat, angle, dest) {
 	return dest;
 };
 
-/*
- * mat4.rotateY
- * Rotates a matrix by the given angle around the Y axis
- *
- * Params:
- * mat - mat4 to rotate
- * angle - angle (in radians) to rotate
- * dest - Optional, mat4 receiving operation result. If not specified result is written to mat
- *
- * Returns:
- * dest if specified, mat otherwise
- */
 mat4.rotateY = function(mat, angle, dest) {
 	var s = Math.sin(angle);
 	var c = Math.cos(angle);
@@ -2035,18 +1643,6 @@ mat4.rotateY = function(mat, angle, dest) {
 	return dest;
 };
 
-/*
- * mat4.rotateZ
- * Rotates a matrix by the given angle around the Z axis
- *
- * Params:
- * mat - mat4 to rotate
- * angle - angle (in radians) to rotate
- * dest - Optional, mat4 receiving operation result. If not specified result is written to mat
- *
- * Returns:
- * dest if specified, mat otherwise
- */
 mat4.rotateZ = function(mat, angle, dest) {
 	var s = Math.sin(angle);
 	var c = Math.cos(angle);
@@ -2081,19 +1677,6 @@ mat4.rotateZ = function(mat, angle, dest) {
 	return dest;
 };
 
-/*
- * mat4.frustum
- * Generates a frustum matrix with the given bounds
- *
- * Params:
- * left, right - scalar, left and right bounds of the frustum
- * bottom, top - scalar, bottom and top bounds of the frustum
- * near, far - scalar, near and far bounds of the frustum
- * dest - Optional, mat4 frustum matrix will be written into
- *
- * Returns:
- * dest if specified, a new mat4 otherwise
- */
 mat4.frustum = function(left, right, bottom, top, near, far, dest) {
 	if(!dest) { dest = mat4.create(); }
 	var rl = (right - left);
@@ -2118,38 +1701,12 @@ mat4.frustum = function(left, right, bottom, top, near, far, dest) {
 	return dest;
 };
 
-/*
- * mat4.perspective
- * Generates a perspective projection matrix with the given bounds
- *
- * Params:
- * fovy - scalar, vertical field of view
- * aspect - scalar, aspect ratio. typically viewport width/height
- * near, far - scalar, near and far bounds of the frustum
- * dest - Optional, mat4 frustum matrix will be written into
- *
- * Returns:
- * dest if specified, a new mat4 otherwise
- */
 mat4.perspective = function(fovy, aspect, near, far, dest) {
 	var top = near*Math.tan(fovy*Math.PI / 360.0);
 	var right = top*aspect;
 	return mat4.frustum(-right, right, -top, top, near, far, dest);
 };
 
-/*
- * mat4.ortho
- * Generates a orthogonal projection matrix with the given bounds
- *
- * Params:
- * left, right - scalar, left and right bounds of the frustum
- * bottom, top - scalar, bottom and top bounds of the frustum
- * near, far - scalar, near and far bounds of the frustum
- * dest - Optional, mat4 frustum matrix will be written into
- *
- * Returns:
- * dest if specified, a new mat4 otherwise
- */
 mat4.ortho = function(left, right, bottom, top, near, far, dest) {
 	if(!dest) { dest = mat4.create(); }
 	var rl = (right - left);
@@ -2174,19 +1731,6 @@ mat4.ortho = function(left, right, bottom, top, near, far, dest) {
 	return dest;
 };
 
-/*
- * mat4.ortho
- * Generates a look-at matrix with the given eye position, focal point, and up axis
- *
- * Params:
- * eye - vec3, position of the viewer
- * center - vec3, point the viewer is looking at
- * up - vec3 pointing "up"
- * dest - Optional, mat4 frustum matrix will be written into
- *
- * Returns:
- * dest if specified, a new mat4 otherwise
- */
 mat4.lookAt = function(eye, center, up, dest) {
 	if(!dest) { dest = mat4.create(); }
 
@@ -2266,16 +1810,6 @@ mat4.lookAt = function(eye, center, up, dest) {
 	return dest;
 };
 
-/*
- * mat4.str
- * Returns a string representation of a mat4
- *
- * Params:
- * mat - mat4 to represent as a string
- *
- * Returns:
- * string representation of mat
- */
 mat4.str = function(mat) {
 	return '[' + mat[0] + ', ' + mat[1] + ', ' + mat[2] + ', ' + mat[3] +
 		', '+ mat[4] + ', ' + mat[5] + ', ' + mat[6] + ', ' + mat[7] +
@@ -2283,22 +1817,8 @@ mat4.str = function(mat) {
 		', '+ mat[12] + ', ' + mat[13] + ', ' + mat[14] + ', ' + mat[15] + ']';
 };
 
-/*
- * quat4 - Quaternions
- */
 quat4 = {};
 
-/*
- * quat4.create
- * Creates a new instance of a quat4 using the default array type
- * Any javascript array containing at least 4 numeric elements can serve as a quat4
- *
- * Params:
- * quat - Optional, quat4 containing values to initialize with
- *
- * Returns:
- * New quat4
- */
 quat4.create = function(quat) {
 	var dest = new glMatrixArrayType(4);
 
@@ -2312,17 +1832,6 @@ quat4.create = function(quat) {
 	return dest;
 };
 
-/*
- * quat4.set
- * Copies the values of one quat4 to another
- *
- * Params:
- * quat - quat4 containing values to copy
- * dest - quat4 receiving copied values
- *
- * Returns:
- * dest
- */
 quat4.set = function(quat, dest) {
 	dest[0] = quat[0];
 	dest[1] = quat[1];
@@ -2332,19 +1841,6 @@ quat4.set = function(quat, dest) {
 	return dest;
 };
 
-/*
- * quat4.calculateW
- * Calculates the W component of a quat4 from the X, Y, and Z components.
- * Assumes that quaternion is 1 unit in length.
- * Any existing W component will be ignored.
- *
- * Params:
- * quat - quat4 to calculate W component of
- * dest - Optional, quat4 receiving calculated values. If not specified result is written to quat
- *
- * Returns:
- * dest if specified, quat otherwise
- */
 quat4.calculateW = function(quat, dest) {
 	var x = quat[0], y = quat[1], z = quat[2];
 
@@ -2359,17 +1855,6 @@ quat4.calculateW = function(quat, dest) {
 	return dest;
 }
 
-/*
- * quat4.inverse
- * Calculates the inverse of a quat4
- *
- * Params:
- * quat - quat4 to calculate inverse of
- * dest - Optional, quat4 receiving inverse values. If not specified result is written to quat
- *
- * Returns:
- * dest if specified, quat otherwise
- */
 quat4.inverse = function(quat, dest) {
 	if(!dest || quat == dest) {
 		quat[0] *= 1;
@@ -2384,33 +1869,11 @@ quat4.inverse = function(quat, dest) {
 	return dest;
 }
 
-/*
- * quat4.length
- * Calculates the length of a quat4
- *
- * Params:
- * quat - quat4 to calculate length of
- *
- * Returns:
- * Length of quat
- */
 quat4.length = function(quat) {
 	var x = quat[0], y = quat[1], z = quat[2], w = quat[3];
 	return Math.sqrt(x*x + y*y + z*z + w*w);
 }
 
-/*
- * quat4.normalize
- * Generates a unit quaternion of the same direction as the provided quat4
- * If quaternion length is 0, returns [0, 0, 0, 0]
- *
- * Params:
- * quat - quat4 to normalize
- * dest - Optional, quat4 receiving operation result. If not specified result is written to quat
- *
- * Returns:
- * dest if specified, quat otherwise
- */
 quat4.normalize = function(quat, dest) {
 	if(!dest) { dest = quat; }
 
@@ -2432,18 +1895,6 @@ quat4.normalize = function(quat, dest) {
 	return dest;
 }
 
-/*
- * quat4.multiply
- * Performs a quaternion multiplication
- *
- * Params:
- * quat - quat4, first operand
- * quat2 - quat4, second operand
- * dest - Optional, quat4 receiving operation result. If not specified result is written to quat
- *
- * Returns:
- * dest if specified, quat otherwise
- */
 quat4.multiply = function(quat, quat2, dest) {
 	if(!dest) { dest = quat; }
 
@@ -2458,18 +1909,6 @@ quat4.multiply = function(quat, quat2, dest) {
 	return dest;
 }
 
-/*
- * quat4.multiplyVec3
- * Transforms a vec3 with the given quaternion
- *
- * Params:
- * quat - quat4 to transform the vector with
- * vec - vec3 to transform
- * dest - Optional, vec3 receiving operation result. If not specified result is written to vec
- *
- * Returns:
- * dest if specified, vec otherwise
- */
 quat4.multiplyVec3 = function(quat, vec, dest) {
 	if(!dest) { dest = vec; }
 
@@ -2488,17 +1927,6 @@ quat4.multiplyVec3 = function(quat, vec, dest) {
 	return dest;
 }
 
-/*
- * quat4.toMat3
- * Calculates a 3x3 matrix from the given quat4
- *
- * Params:
- * quat - quat4 to create matrix from
- * dest - Optional, mat3 receiving operation result
- *
- * Returns:
- * dest if specified, a new mat3 otherwise
- */
 quat4.toMat3 = function(quat, dest) {
 	if(!dest) { dest = mat3.create(); }
 
@@ -2535,17 +1963,6 @@ quat4.toMat3 = function(quat, dest) {
 	return dest;
 }
 
-/*
- * quat4.toMat4
- * Calculates a 4x4 matrix from the given quat4
- *
- * Params:
- * quat - quat4 to create matrix from
- * dest - Optional, mat4 receiving operation result
- *
- * Returns:
- * dest if specified, a new mat4 otherwise
- */
 quat4.toMat4 = function(quat, dest) {
 	if(!dest) { dest = mat4.create(); }
 
@@ -2590,19 +2007,6 @@ quat4.toMat4 = function(quat, dest) {
 	return dest;
 }
 
-/*
- * quat4.slerp
- * Performs a spherical linear interpolation between two quat4
- *
- * Params:
- * quat - quat4, first quaternion
- * quat2 - quat4, second quaternion
- * lerp - interpolation amount between the two inputs
- * dest - Optional, quat4 receiving operation result. If not specified result is written to quat
- *
- * Returns:
- * dest if specified, quat otherwise
- */
 quat4.slerp = function(quat, quat2, lerp, dest) {
     if(!dest) { dest = quat; }
 
@@ -2621,16 +2025,6 @@ quat4.slerp = function(quat, quat2, lerp, dest) {
     return dest;
 }
 
-/*
- * quat4.str
- * Returns a string representation of a quaternion
- *
- * Params:
- * quat - quat4 to represent as a string
- *
- * Returns:
- * string representation of quat
- */
 quat4.str = function(quat) {
 	return '[' + quat[0] + ', ' + quat[1] + ', ' + quat[2] + ', ' + quat[3] + ']';
 }
@@ -2832,9 +2226,13 @@ Math.radToDeg = Math.radToDeg || function(rad) {
   return rad * 180.0 / Math.PI;
 };
 
+Math.rad2deg = Math.rad2deg || Math.radToDeg;
+
 Math.degToRad = Math.degToRad || function(deg) {
   return deg * Math.PI / 180.0;
 };
+
+Math.deg2rad = Math.deg2rad || Math.degToRad;
 
 Math.equalish = Math.equalish || function(a, b) {
   if (!a.length && !b.length)
@@ -2846,6 +2244,15 @@ Math.equalish = Math.equalish || function(a, b) {
   return true;
 };
 Jax.Util = {
+  decodePickingColor: function(red, green, blue, alpha) {
+    /* blue is a key. It is always max. So if it's 1, we're dealing with floats; else, bytes. */
+    if (blue == 1.0) {
+      red *= 255;
+      green *= 255;
+    }
+    return red * 256 + green;
+  },
+
   vectorize: function(data) {
     if (data) {
       var res = vec3.create();
@@ -3191,9 +2598,6 @@ if (glMatrixArrayType.prototype.toString != Array.prototype.toString) {
  */
 
 
-/*
- * Provides requestAnimationFrame in a cross browser way.
- */
 window.requestAnimFrame = (function() {
   return window.requestAnimationFrame ||
          window.webkitRequestAnimationFrame ||
@@ -3205,8 +2609,6 @@ window.requestAnimFrame = (function() {
          };
 })();
 
-
-/* My own custom extensions to Prototype */
 
 
 (function() {
@@ -3319,12 +2721,6 @@ window.requestAnimFrame = (function() {
     return klass;
   };
 
-  /*
-    class method #delegate
-    usages:
-      klass.delegate(/^(get|load|mult)(.*)Matrix$/).into("matrix_stack");
-      klass.delegate("getProjectionMatrix", "loadModelMatrix").into("matrix_stack");
-   */
   Jax.Class.Methods.delegate = function() {
     return new Delegator(this, arguments);
   };
@@ -3379,7 +2775,7 @@ Jax.Helper = {
         {
           var self = this;
           context.pushMatrix(function() {
-            context.multModelMatrix(self.camera.getModelViewMatrix());
+            context.multModelMatrix(self.camera.getTransformationMatrix());
             self.mesh.render(context, options);
           });
         }
@@ -3477,11 +2873,13 @@ Jax.Helper = {
 
         if (!this.rendered_or_redirected)
           setViewKey(this);
+        return this;
       },
 
       eraseResult: function() {
         this.rendered_or_redirected = false;
         this.view_key = null;
+        return this;
       }
     });
   })();
@@ -3618,6 +3016,7 @@ Jax.View = (function() {
 
     render: function() {
       this.view_func();
+      return this;
     }
   });
 })();
@@ -3802,11 +3201,12 @@ Jax.Shader = (function() {
     for (var i in map) {
       if (map[i].shared) {
         if (options.skip_global_definitions && options.skip_global_definitions.indexOf(map[i].full_name) != -1) {
-          var rx = new RegExp("(shared\\s+)?"+map[i].scope+"\\s*"+map[i].type+"[^;]*?"+map[i].full_name+"[^;]*?;\n?", "g");
+          var rx = new RegExp("(shared\\s+)"+map[i].scope+"\\s*"+map[i].type+"[^;]*?"+map[i].full_name+"[^;]*?;\n?", "g");
           source = source.replace(rx, "");
         }
       }
     }
+
     return source.replace(/shared\s+/, '');
   }
 
@@ -3816,6 +3216,7 @@ Jax.Shader = (function() {
     source = applyExports(self, options, source);
     source = applyImports(self, options, source);
     source = mangleUniformsAndAttributes(self, options, source);
+
     return source;
   }
 
@@ -3927,7 +3328,7 @@ Jax.Shader = (function() {
                    (this.getRawSource(options, 'vertex')   || "")  + "\n\n" +
                    (this.getRawSource(options, 'fragment') || "");
 
-      var rx = new RegExp("(^|\\n|\\s+)((shared\\s+)?)(uniform|attribute|varying) (\\w+) ((?!"+prefix+")[^;]*);"), result;
+      var rx = new RegExp("(^|\\n|\\s+)((shared\\s+)?)(uniform|attribute|varying)\\s+(\\w+)\\s+((?!"+prefix+")[^;]*);"), result;
       while (result = rx.exec(source)) {
         var shared = /shared/.test(result[2]);
         var scope = result[4];
@@ -4534,6 +3935,7 @@ Jax.ShaderChain = (function() {
           else map[variable.full_name] = variable;
         }
       }
+
       return map;
     },
 
@@ -4629,6 +4031,15 @@ Jax.Material = (function() {
           this.addLayer(instantiate_layer(options.layers[i]));
         }
       }
+    },
+
+    supportsLighting: function() {
+      if (this.getName() == "lighting")
+        return true;
+      for (var i = 0; i < this.layers.length; i++)
+        if (this.layers[i].getName() == "lighting")
+          return true;
+      return false;
     },
 
     getName: function() { return this.name; },
@@ -4906,9 +4317,14 @@ Jax.Material.ShadowMap = Jax.Class.create(Jax.Material, {
     if (back)  uniforms.texture('SHADOWMAP1', back,  context);
   }
 });
-Jax.Material.DualParaboloid = Jax.Class.create(Jax.Material, {
+Jax.Material.Depthmap = Jax.Class.create(Jax.Material, {
   initialize: function($super) {
-    $super({shader:"paraboloid-depthmap"});
+    $super({shader:"depthmap"});
+  }
+});
+Jax.Material.Paraboloid = Jax.Class.create(Jax.Material, {
+  initialize: function($super, options) {
+    $super(Jax.Util.normalizeOptions(options, {shader:"paraboloid"}));
   },
 
   setUniforms: function($super, context, mesh, options, uniforms) {
@@ -4955,11 +4371,26 @@ Jax.Material.Fog = Jax.Class.create(Jax.Material, {
     uniforms.set('FogColor', this.color);
   }
 });
+Jax.Material.Picking = Jax.Class.create(Jax.Material, {
+  initialize: function($super) {
+    $super({shader:"picking"});
+  },
+
+  setUniforms: function($super, context, mesh, options, uniforms) {
+    $super(context, mesh, options, uniforms);
+
+    model_index = options.model_index;
+    if (model_index == undefined) model_index = -1;
+
+    uniforms.set('INDEX', model_index);
+  }
+});
 
 Jax.Material.create("basic");
 Jax.Material.create("default", {default_shader:'basic'});
 Jax.Material.create("depthmap", {default_shader:"depthmap"});
-Jax.Material.create("paraboloid-depthmap", {type:"DualParaboloid",default_shader:"paraboloid-depthmap"});
+Jax.Material.create("paraboloid-depthmap", {type:"Paraboloid",default_shader:"paraboloid",layers:[{type:"Depthmap"}]});
+Jax.Material.create("picking", {type:"Picking"});
 Jax.Core = {};
 
 Jax.Core.Face = Jax.Class.create({
@@ -5385,6 +4816,18 @@ Jax.Mesh = (function() {
         this.draw_mode = GL_TRIANGLES;
     },
 
+    setColor: function(red, green, blue, alpha) {
+      var buf = this.getColorBuffer();
+      for (var i = 0; i < buf.js.length; i += 4) {
+        buf.js[i] = red;
+        buf.js[i+1] = green;
+        buf.js[i+2] = blue;
+        buf.js[i+3] = alpha;
+      }
+      buf.refresh();
+      return this;
+    },
+
     dispose: function() {
       while (this.faces && this.faces.length) this.faces.pop();
       while (this.edges && this.edges.length) this.edges.pop();
@@ -5549,6 +4992,8 @@ Jax.Geometry.Plane = (function() {
 
       this.point = points[1];
       this.d = -innerProduct(this.normal, this.point[0], this.point[1], this.point[2]);
+
+      return this;
     },
 
     setCoefficients: function(a, b, c, d) {
@@ -5557,6 +5002,7 @@ Jax.Geometry.Plane = (function() {
       this.normal[1] = b/len;
       this.normal[2] = c/len;
       this.d = d/len;
+      return this;
     },
 
     distance: function(point)
@@ -5569,7 +5015,7 @@ Jax.Geometry.Plane = (function() {
 
     whereis: function(point)
     {
-      if (arguments.length == 3) points = [arguments[0], arguments[1], arguments[2]];
+      if (arguments.length == 3) point = [arguments[0], arguments[1], arguments[2]];
       var d = this.distance(point);
       if (d > 0) return Jax.Geometry.Plane.FRONT;
       if (d < 0) return Jax.Geometry.Plane.BACK;
@@ -5984,6 +5430,7 @@ Jax.Scene.LightSource = (function() {
         fieldOfView = 60;
         this.camera.perspective({near:nearPlane,far:nearPlane+(2.0*sceneBoundingRadius),fov:fieldOfView,width:2048,height:2048});
       } else if (this.type == Jax.POINT_LIGHT) {
+        var paraboloid_depthmap = Jax.Material.find("paraboloid-depthmap");
 
         context.glDisable(GL_BLEND);
         context.glEnable(GL_CULL_FACE);
@@ -5995,20 +5442,20 @@ Jax.Scene.LightSource = (function() {
           self.framebuffers[0].bind(context, function() {
             self.framebuffers[0].viewport(context);
             context.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            context.loadViewMatrix(self.camera.getModelViewMatrix());
+            context.loadViewMatrix(self.camera.getTransformationMatrix());
             mat4.set(context.getInverseViewMatrix(), sm);
 
             for (var i = 0; i < objects.length; i++) {
-              objects[i].render(context, {material:'paraboloid-depthmap', direction:1});
+              objects[i].render(context, {material:paraboloid_depthmap, direction:1});
             }
           });
 
           self.framebuffers[1].bind(context, function() {
             self.framebuffers[1].viewport(context);
             context.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            context.loadViewMatrix(self.camera.getModelViewMatrix());
+            context.loadViewMatrix(self.camera.getTransformationMatrix());
             for (var i = 0; i < objects.length; i++) {
-              objects[i].render(context, {material:'paraboloid-depthmap',direction:-1});
+              objects[i].render(context, {material:paraboloid_depthmap,direction:-1});
             }
           });
 
@@ -6029,7 +5476,7 @@ Jax.Scene.LightSource = (function() {
         context.pushMatrix(function() {
           self.framebuffers[0].viewport(context);
           context.matrix_stack.loadProjectionMatrix(self.camera.getProjectionMatrix());
-          context.matrix_stack.loadViewMatrix(self.camera.getModelViewMatrix());
+          context.matrix_stack.loadViewMatrix(self.camera.getTransformationMatrix());
           mat4.identity(sm);
           sm[0] = sm[5] = sm[10] = sm[12] = sm[13] = sm[14] = 0.5;
           mat4.multiply(sm, context.getModelViewProjectionMatrix());
@@ -6111,10 +5558,14 @@ Jax.Scene.LightManager = (function() {
     },
 
     illuminate: function(context, objects, options) {
+      options = Jax.Util.normalizeOptions(options, {});
+
       this.context.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       for (var i = 0; i < this._lights.length; i++) {
         for (var j = 0; j < objects.length; j++) {
           this._current_light = i;
+          options.model_index = j;
+
           /* TODO optimization: see if objects[j] is even affected by this._lights[i] (based on attenuation) */
           if (objects[j].isLit())
             objects[j].render(context, options);
@@ -6125,9 +5576,13 @@ Jax.Scene.LightManager = (function() {
     },
 
     ambient: function(context, objects, options) {
+      options = Jax.Util.normalizeOptions(options, {});
+
       for (var i = 0; i < this._lights.length; i++) {
         this._current_light = i;
         for (var j = 0; j < objects.length; j++) {
+          options.model_index = j;
+
           /* TODO optimization: see if objects[j] is even affected by this._lights[i] (based on attenuation) */
           if (objects[j].isLit())
             objects[j].render(context, options);
@@ -6411,13 +5866,13 @@ Jax.Camera = (function() {
       this.fireEvent('matrixUpdated');
     },
 
-    getModelViewMatrix: function() { return this.matrices.mv; },
+    getTransformationMatrix: function() { return this.matrices.mv; },
 
     getProjectionMatrix: function() { return this.matrices.p; },
 
     getNormalMatrix: function() {
       if (!this.normal_matrix_up_to_date) {
-        mat4.toInverseMat3(this.getModelViewMatrix(), this.matrices.n);
+        mat4.toInverseMat3(this.getTransformationMatrix(), this.matrices.n);
         mat3.transpose(this.matrices.n);
       }
       this.normal_matrix_up_to_date = true;
@@ -6502,6 +5957,14 @@ Jax.Camera = (function() {
 Jax.Camera.addMethods(Jax.Events.Methods);
 
 Jax.World = (function() {
+  function getPickBuffer(self) {
+    if (self.pickBuffer) return self.pickBuffer;
+    return self.pickBuffer = new Jax.Framebuffer({
+      width:self.context.canvas.width,
+      height:self.context.canvas.height
+    });
+  }
+
   return Jax.Class.create({
     initialize: function(context) {
       this.context  = context;
@@ -6531,6 +5994,57 @@ Jax.World = (function() {
             this.invalidate();
             return this.objects[i];
           }
+    },
+
+    pickRegionalIndices: function(x1, y1, x2, y2, ary) {
+      var w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
+      if (ary) ary.clear();
+      else ary = new Array();
+      var world = this, pickBuffer = getPickBuffer(this), context = this.context;
+      var data = new Uint8Array(w*h*4);
+
+      pickBuffer.bind(context, function() {
+        pickBuffer.viewport(context);
+         context.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+         context.glDisable(GL_BLEND);
+         world.render({material:"picking"});
+         context.glReadPixels(x1, y1, w, h, GL_RGBA, GL_UNSIGNED_BYTE, data);
+         if (data.data) data = data.data;
+      });
+
+      context.glViewport(0, 0, context.canvas.width, context.canvas.height);
+      context.glEnable(GL_BLEND);
+
+      var index;
+      for (var i = 2; i < data.length; i += 4) {
+        if (data[i] > 0) { // blue key exists, we've found an object
+          index = Jax.Util.decodePickingColor(data[i-2], data[i-1], data[i], data[i+1]);
+          if (index != undefined) {
+            ary.push(index);
+          }
+        }
+      }
+
+      return ary;
+    },
+
+    pickRegion: function(x1, y1, x2, y2, ary) {
+      var result = this.pickRegionalIndices(x1, y1, x2, y2);
+      for (var i = 0; i < result.length; i++)
+        result[i] = this.getObject(i);
+      return result;
+    },
+
+    pickIndex: function(x, y) {
+      this._pick_ary = this._pick_ary || new Array();
+      return this.pickRegionalIndices(x, y, x+1, y+1, this._pick_ary)[0];
+    },
+
+    pick: function(x, y) {
+      var index = this.pickIndex(x, y);
+      if (index != undefined)
+        return this.getObject(index);
+      return index;
     },
 
     countObjects: function() {
@@ -6564,16 +6078,16 @@ Jax.World = (function() {
 
     getShadowCasters: function() { return this.shadow_casters; },
 
-    render: function() {
+    render: function(options) {
       var i;
 
       /* this.current_pass is used by the material */
 
       this.context.current_pass = Jax.Scene.AMBIENT_PASS;
       this.context.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      var unlit = {unlit:true};
+      var unlit = Jax.Util.normalizeOptions(options, {unlit:true});
 
-      if (this.lighting.isEnabled()) {
+      if (this.lighting.isEnabled() && (!unlit.material || unlit.material.supportsLighting())) {
         /* ambient pass */
         /*
           So.... I see a legit need for an ambient pass for A) unlit objects and B)
@@ -6582,8 +6096,10 @@ Jax.World = (function() {
           lighting take care of (ambient + diffuse + specular) all at once?
         */
         for (i = 0; i < this.objects.length; i++)
-          if (!this.objects[i].lit)
+          if (!this.objects[i].lit) {
+            unlit.model_index = i;
             this.objects[i].render(this.context, unlit);
+          }
 
         /* shadowgen pass */
         this.context.current_pass = Jax.Scene.SHADOWMAP_PASS;
@@ -6594,10 +6110,12 @@ Jax.World = (function() {
 
         /* illumination pass */
         this.context.current_pass = Jax.Scene.ILLUMINATION_PASS;
-        this.lighting.illuminate(this.context, this.objects);
+        this.lighting.illuminate(this.context, this.objects, options);
       } else {
-        for (i = 0; i < this.objects.length; i++)
+        for (i = 0; i < this.objects.length; i++) {
+          unlit.model_index = i;
           this.objects[i].render(this.context, unlit);
+        }
       }
     },
 
@@ -6905,6 +6423,8 @@ Jax.EVENT_METHODS = (function() {
     do {
       valueT += element.offsetTop  || 0;
       valueL += element.offsetLeft || 0;
+      valueT += Jax.Compatibility.offsetTop;
+      valueL += Jax.Compatibility.offsetLeft;
       element = element.offsetParent;
     } while (element);
 
@@ -6927,10 +6447,56 @@ Jax.EVENT_METHODS = (function() {
     return evt;
   }
 
+  function fixEvent(event) {
+		var originalEvent = event;
+		event = {type:originalEvent.type};
+		var props = "altKey attrChange attrName bubbles button cancelable charCode clientX clientY ctrlKey currentTarget data detail eventPhase fromElement handler keyCode layerX layerY metaKey newValue offsetX offsetY pageX pageY prevValue relatedNode relatedTarget screenX screenY shiftKey srcElement target toElement view wheelDelta which".split(" ");
+
+		for ( var i = props.length, prop; i; ) {
+			prop = props[ --i ];
+			event[ prop ] = originalEvent[ prop ];
+		}
+
+		if ( !event.target ) {
+			event.target = event.srcElement || document;
+		}
+
+		if ( event.target.nodeType === 3 ) {
+			event.target = event.target.parentNode;
+		}
+
+		if ( !event.relatedTarget && event.fromElement ) {
+			event.relatedTarget = event.fromElement === event.target ? event.toElement : event.fromElement;
+		}
+
+		if ( event.pageX == null && event.clientX != null ) {
+			var eventDocument = event.target.ownerDocument || document,
+				doc = eventDocument.documentElement,
+				body = eventDocument.body;
+
+			event.pageX = event.clientX + (doc && doc.scrollLeft || body && body.scrollLeft || 0) - (doc && doc.clientLeft || body && body.clientLeft || 0);
+			event.pageY = event.clientY + (doc && doc.scrollTop  || body && body.scrollTop  || 0) - (doc && doc.clientTop  || body && body.clientTop  || 0);
+		}
+
+		if ( event.which == null && (event.charCode != null || event.keyCode != null) ) {
+			event.which = event.charCode != null ? event.charCode : event.keyCode;
+		}
+
+		if ( !event.metaKey && event.ctrlKey ) {
+			event.metaKey = event.ctrlKey;
+		}
+
+		if ( !event.which && event.button !== undefined ) {
+			event.which = (event.button & 1 ? 1 : ( event.button & 2 ? 3 : ( event.button & 4 ? 2 : 0 ) ));
+		}
+
+		return event;
+  }
+
   function buildMouseEvent(self, evt) {
     var mouse = self.mouse;
 
-    evt = evt || window.event || {};
+    evt = fixEvent(evt || window.event);
     evt.context = self;
     evt.canvas = self.canvas;
     evt.offsetx = mouse.x;
@@ -6941,17 +6507,9 @@ Jax.EVENT_METHODS = (function() {
     mouse.offsety = evt.offsety || 0;
 
     var cumulativeOffset = getCumulativeOffset(self.canvas);
-    mouse.x = evt.clientX - cumulativeOffset[0];
-    mouse.y = evt.clientY - cumulativeOffset[1];
+    mouse.x = evt.pageX - cumulativeOffset[0];
+    mouse.y = evt.pageY - cumulativeOffset[1];
     mouse.y = self.canvas.height - mouse.y; // invert y
-
-    if (window.pageXOffset) {
-      mouse.x += window.pageXOffset;
-      mouse.y += window.pageYOffset;
-    } else {
-      mouse.x += document.body.scrollLeft;
-      mouse.y += document.body.scrollTop;
-    }
 
     mouse.diffx = mouse.x - mouse.offsetx;
     mouse.diffy = mouse.y - mouse.offsety;
@@ -7076,12 +6634,43 @@ Jax.Context = (function() {
     if (!self.gl) throw new Error("WebGL could not be initialized!");
   }
 
+  function updateFramerate(self) {
+    var current_render_start = Jax.uptime;
+    if (!self.last_render_start) self.last_render_start = Jax.uptime;
+    var time_to_render_this_frame = current_render_start - self.last_render_start;
+
+    self.time_to_render = (self.time_to_render || 0) * self.framerate_sample_ratio
+                        + time_to_render_this_frame * (1 - self.framerate_sample_ratio);
+
+    self.framerate = self.frames_per_second = 1.0 / self.time_to_render;
+    self.last_render_start = current_render_start;
+  }
+
+  function updateUpdateRate(self) {
+    var current_update_start = Jax.uptime;
+    if (!self.last_update_start) self.last_update_start = current_update_start;
+    var time_to_update_this_frame = current_update_start - self.last_update_start;
+
+    if (self.calculateUpdateRate) {
+      self.time_to_update = (self.time_to_update || 0) * self.framerate_sample_ratio
+                          + time_to_update_this_frame * (1 - self.framerate_sample_ratio);
+
+      self.updates_per_second = 1.0 / self.time_to_update;
+    }
+
+    var timechange = current_update_start - self.last_update_start;
+    self.last_update_start = current_update_start;
+    return timechange;
+  }
+
   function startRendering(self) {
     function render() {
+      if (self.calculateFramerate) updateFramerate(self);
       if (self.current_view) {
-        reloadMatrices(self);
-        self.glViewport(0, 0, self.canvas.width, self.canvas.height);
+        self.prepare();
         self.current_view.render();
+        var len = self.afterRenderFuncs.length;
+        for (var i = 0; i < len; i++) self.afterRenderFuncs[i].call(self);
         self.render_interval = requestAnimFrame(render, self.canvas);
       }
       else {
@@ -7099,12 +6688,11 @@ Jax.Context = (function() {
 
   function startUpdating(self) {
     function updateFunc() {
-      if (!self.lastUpdate) self.lastUpdate = new Date();
-      var now = new Date();
-      var timechange = (now - self.lastUpdate) / 1000.0;
-      self.lastUpdate = now;
+      var timechange = updateUpdateRate(self);
 
       self.update(timechange);
+      var len = self.afterUpdateFuncs.length;
+      for (var i = 0; i < len; i++) self.afterUpdateFuncs[i].call(self);
       self.update_interval = setTimeout(updateFunc, Jax.update_speed);
     }
     updateFunc();
@@ -7130,7 +6718,7 @@ Jax.Context = (function() {
   function reloadMatrices(self) {
     self.matrix_stack.reset(); // reset depth
     self.matrix_stack.loadModelMatrix(Jax.IDENTITY_MATRIX);
-    self.matrix_stack.loadViewMatrix(self.player.camera.getModelViewMatrix());
+    self.matrix_stack.loadViewMatrix(self.player.camera.getTransformationMatrix());
     self.matrix_stack.loadProjectionMatrix(self.player.camera.getProjectionMatrix());
   }
 
@@ -7155,10 +6743,33 @@ Jax.Context = (function() {
       this.player.camera.perspective({width:canvas.width, height:canvas.height});
       this.matrix_stack = new Jax.MatrixStack();
       this.current_pass = Jax.Scene.AMBIENT_PASS;
+      this.afterRenderFuncs = [];
+      this.afterUpdateFuncs = [];
+      this.framerate = 0;
+      this.frames_per_second = 0;
+      this.updates_per_second = 0;
+
+      this.framerate_sample_ratio = 0.9;
 
       startUpdating(this);
       if (Jax.routes.isRouted("/"))
         this.redirectTo("/");
+    },
+
+    getFramesPerSecond: function() { this.calculateFramerate = true; return this.frames_per_second; },
+
+    getUpdatesPerSecond: function() { this.calculateUpdateRate = true; return this.updates_per_second; },
+
+    disableFrameSpeedCalculations: function() { this.calculateFramerate = false; },
+
+    disableUpdateSpeedCalculations: function() { this.caclulateUpdateRate = false; },
+
+    afterRender: function(func) {
+      this.afterRenderFuncs.push(func);
+    },
+
+    afterUpdate: function(func) {
+      this.afterUpdateFuncs.push(func);
     },
 
     hasStencil: function() {
@@ -7183,10 +6794,16 @@ Jax.Context = (function() {
       return this.current_controller;
     },
 
+    prepare: function() {
+      reloadMatrices(this);
+      this.glViewport(0, 0, this.canvas.width, this.canvas.height);
+    },
+
     update: function(timechange) {
       if (this.current_controller && this.current_controller.update)
         this.current_controller.update(timechange);
       this.world.update(timechange);
+      return this;
     },
 
     isRendering: function() {
@@ -7207,6 +6824,7 @@ Jax.Context = (function() {
       this.matrix_stack.push();
       yield_to();
       this.matrix_stack.pop();
+      return this;
     },
 
     getViewMatrix: function() { return this.matrix_stack.getViewMatrix(); },
@@ -7244,12 +6862,181 @@ Jax.Context = (function() {
   /* set up matrix stack delegation */
   klass.delegate(/^(get|load|mult)(.*)Matrix$/).into("matrix_stack");
 
+  klass.prototype.getFramerate = klass.prototype.getFramesPerSecond;
+
   return klass;
 })();
 
 Jax.Context.identifier = 0;
 Jax.Context.addMethods(GL_METHODS);
 Jax.Context.addMethods(Jax.EVENT_METHODS);
+Jax.Noise = (function() {
+  var perm/*[256]*/ = [151,160,137,91,90,15,
+    131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,
+    190, 6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,
+    88,237,149,56,87,174,20,125,136,171,168, 68,175,74,165,71,134,139,48,27,166,
+    77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,
+    102,143,54, 65,25,63,161, 1,216,80,73,209,76,132,187,208, 89,18,169,200,196,
+    135,130,116,188,159,86,164,100,109,198,173,186, 3,64,52,217,226,250,124,123,
+    5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,
+    223,183,170,213,119,248,152, 2,44,154,163, 70,221,153,101,155,167, 43,172,9,
+    129,22,39,253, 19,98,108,110,79,113,224,232,178,185, 112,104,218,246,97,228,
+    251,34,242,193,238,210,144,12,191,179,162,241, 81,51,145,235,249,14,239,107,
+    49,192,214, 31,181,199,106,157,184, 84,204,176,115,121,50,45,127, 4,150,254,
+    138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+
+  /* These are Ken Perlin's proposed gradients for 3D noise. I kept them for
+     better consistency with the reference implementation, but there is really
+     no need to pad this to 16 gradients for this particular implementation.
+     If only the "proper" first 12 gradients are used, they can be extracted
+     from the grad4[][] array: grad3[i][j] == grad4[i*2][j], 0<=i<=11, j=0,1,2
+  */
+  var grad3/*[16][3]*/ = [0,1,1,    0,1,-1,   0,-1,1,   0,-1,-1,
+                          1,0,1,    1,0,-1,  -1,0,1,   -1,0,-1,
+                          1,1,0,    1,-1,0,  -1,1,0,   -1,-1,0, // 12 cube edges
+                          1,0,-1,  -1,0,-1,   0,-1,1,   0,1,1]; // 4 more to make 16
+
+  /* These are my own proposed gradients for 4D noise. They are the coordinates
+     of the midpoints of each of the 32 edges of a tesseract, just like the 3D
+     noise gradients are the midpoints of the 12 edges of a cube.
+  */
+  var grad4/*[32][4]*/ = [0,1,1,1,   0,1,1,-1,   0,1,-1,1,   0,1,-1,-1, // 32 tesseract edges
+                          0,-1,1,1,  0,-1,1,-1,  0,-1,-1,1,  0,-1,-1,-1,
+                          1,0,1,1,   1,0,1,-1,   1,0,-1,1,   1,0,-1,-1,
+                         -1,0,1,1,  -1,0,1,-1,  -1,0,-1,1,  -1,0,-1,-1,
+                          1,1,0,1,   1,1,0,-1,   1,-1,0,1,   1,-1,0,-1,
+                         -1,1,0,1,  -1,1,0,-1,  -1,-1,0,1,  -1,-1,0,-1,
+                          1,1,1,0,   1,1,-1,0,   1,-1,1,0,   1,-1,-1,0,
+                         -1,1,1,0,  -1,1,-1,0,  -1,-1,1,0,  -1,-1,-1,0];
+
+  /* This is a look-up table to speed up the decision on which simplex we
+     are in inside a cube or hypercube "cell" for 3D and 4D simplex noise.
+     It is used to avoid complicated nested conditionals in the GLSL code.
+     The table is indexed in GLSL with the results of six pair-wise
+     comparisons beween the components of the P=(x,y,z,w) coordinates
+     within a hypercube cell.
+     c1 = x>=y ? 32 : 0;
+     c2 = x>=z ? 16 : 0;
+     c3 = y>=z ? 8 : 0;
+     c4 = x>=w ? 4 : 0;
+     c5 = y>=w ? 2 : 0;
+     c6 = z>=w ? 1 : 0;
+     offsets = simplex[c1+c2+c3+c4+c5+c6];
+     o1 = step(160,offsets);
+     o2 = step(96,offsets);
+     o3 = step(32,offsets);
+     (For the 3D case, c4, c5, c6 and o3 are not needed.)
+  */
+    var simplex4/*[][4]*/ = [0,64,128,192,   0,64,192,128,   0,0,0,0,        0,128,192,64,
+                             0,0,0,0,        0,0,0,0,        0,0,0,0,        64,128,192,0,
+                             0,128,64,192,   0,0,0,0,        0,192,64,128,   0,192,128,64,
+                             0,0,0,0,        0,0,0,0,        0,0,0,0,        64,192,128,0,
+                             0,0,0,0,        0,0,0,0,        0,0,0,0,        0,0,0,0,
+                             0,0,0,0,        0,0,0,0,        0,0,0,0,        0,0,0,0,
+                             64,128,0,192,   0,0,0,0,        64,192,0,128,   0,0,0,0,
+                             0,0,0,0,        0,0,0,0,        128,192,0,64,   128,192,64,0,
+                             64,0,128,192,   64,0,192,128,   0,0,0,0,        0,0,0,0,
+                             0,0,0,0,        128,0,192,64,   0,0,0,0,        128,64,192,0,
+                             0,0,0,0,        0,0,0,0,        0,0,0,0,        0,0,0,0,
+                             0,0,0,0,        0,0,0,0,        0,0,0,0,        0,0,0,0,
+                             128,0,64,192,   0,0,0,0,        0,0,0,0,        0,0,0,0,
+                             192,0,64,128,   192,0,128,64,   0,0,0,0,        192,64,128,0,
+                             128,64,0,192,   0,0,0,0,        0,0,0,0,        0,0,0,0,
+                             192,64,0,128,   0,0,0,0,        192,128,0,64,   192,128,64,0];
+
+  var simplex_buf = null, perm_buf = null, grad_buf = null;
+
+  /*
+   * initPermTexture() - create and load a 2D texture for
+   * a combined index permutation and gradient lookup table.
+   * This texture is used for 2D and 3D noise, both classic and simplex.
+   */
+  function initPermTexture(context)
+  {
+    var tex = new Jax.Texture({min_filter: GL_NEAREST, mag_filter: GL_NEAREST, width:256, height:256});
+
+    if (!perm_buf) {
+      var pixels = new Array(256*256*4);
+      var i,j;
+      for(i = 0; i<256; i++)
+        for(j = 0; j<256; j++) {
+          var offset = (i*256+j)*4;
+          var value = perm[(j+perm[i]) & 0xFF];
+          var g = (value & 0x0F) * 3;
+          pixels[offset]   = grad3[g+0] * 64 + 64; // Gradient x
+          pixels[offset+1] = grad3[g+1] * 64 + 64; // Gradient y
+          pixels[offset+2] = grad3[g+2] * 64 + 64; // Gradient z
+          pixels[offset+3] = value;                // Permuted index
+        }
+      perm_buf = new Uint8Array(pixels);
+    }
+
+    tex.bind(context, function() {
+      context.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, perm_buf);
+    });
+
+    return tex;
+  }
+
+  /*
+   * initSimplexTexture() - create and load a 1D texture for a
+   * simplex traversal order lookup table. This is used for simplex noise only,
+   * and only for 3D and 4D noise where there are more than 2 simplices.
+   * (3D simplex noise has 6 cases to sort out, 4D simplex noise has 24 cases.)
+   */
+  function initSimplexTexture(context)
+  {
+
+    if (!simplex_buf) simplex_buf = new Uint8Array(simplex4);
+    var tex = new Jax.Texture({min_filter:GL_NEAREST,mag_filter:GL_NEAREST, width:64, height:1});
+    tex.bind(context, function() {
+      context.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, simplex_buf);
+    });
+    return tex;
+  }
+
+  /*
+   * initGradTexture(context) - create and load a 2D texture
+   * for a 4D gradient lookup table. This is used for 4D noise only.
+   */
+  function initGradTexture(context)
+  {
+    var tex = new Jax.Texture({min_filter: GL_NEAREST, mag_filter: GL_NEAREST, width:256, height:256});
+
+    if (!grad_buf) {
+      var pixels = new Array(256*256*4);
+      var i,j;
+
+      for(i = 0; i<256; i++)
+        for(j = 0; j<256; j++) {
+          var offset = (i*256+j)*4;
+          var value = perm[(j+perm[i]) & 0xFF];
+          var g = (value & 0x1F) * 4;
+          pixels[offset]   = grad4[g+0] * 64 + 64; // Gradient x
+          pixels[offset+1] = grad4[g+1] * 64 + 64; // Gradient y
+          pixels[offset+2] = grad4[g+2] * 64 + 64; // Gradient z
+          pixels[offset+3] = grad4[g+3] * 64 + 64; // Gradient z
+        }
+
+      grad_buf = new Uint8Array(pixels);
+    }
+
+    tex.bind(context, function() {
+      context.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, grad_buf);
+    });
+    return tex;
+  }
+
+  return Jax.Class.create({
+    initialize: function(context) {
+      this.perm = initPermTexture(context);
+
+      this.simplex = initSimplexTexture(context);
+
+      this.grad = initGradTexture(context);
+    }
+  });
+})();
 
 Jax.shaders = {};
 
@@ -7259,13 +7046,18 @@ Jax.routes = new Jax.RouteSet();
 
 Jax.loaded = true;
 
-Jax.render_speed = 15;
+Jax.render_speed = 16;
 
-Jax.update_speed = 15;
+Jax.update_speed = 33;
 
 
 Jax.max_lights = undefined;
 
+Jax.uptime = 0.0;
+Jax.uptime_tracker = new Date();
+
+/* TODO: verify : is setInterval better for updates, or should be we using requestAnimFrame? */
+setInterval(function() { Jax.uptime = (new Date() - Jax.uptime_tracker) / 1000; }, 33);
 
 /* meshes */
 Jax.Mesh.Quad = (function() {
@@ -7359,7 +7151,7 @@ Jax.Mesh.Cube = Jax.Class.create(Jax.Mesh, {
     {
       var qverts = [], qcolor = [], qtex = [], qnorm = [];
       this.sides[i].mesh.init(qverts, qcolor, qtex, qnorm, []);
-      matrix = this.sides[i].camera.getModelViewMatrix();
+      matrix = this.sides[i].camera.getTransformationMatrix();
 
       function push(verti) {
         var i1 = verti*3, i2 = verti*3+1, i3 = verti*3+2;
