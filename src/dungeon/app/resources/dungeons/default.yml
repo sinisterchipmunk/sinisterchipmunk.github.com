@@ -1,0 +1,18 @@
+# default attribute values
+# (these will apply to all dungeons)
+
+# Define a map in ASCII. Walls / impassable
+# areas are marked with X's. Passable areas
+# (hallways) are marked with spaces.
+map:
+  - XXXXXXXXXXXXXXXXXXXXXX
+  - X'     '     '     ' X
+  - X XXXXXXXXXXXXXXXXXX X
+  - X XXXX'     '     'X'X
+  - X'     XXXXXXXXXXXXX X
+  - XXXXXXXXXXXXXXXXXXXXXX
+
+player_start:
+  position: 18, 3
+  direction: -1, 0
+  
