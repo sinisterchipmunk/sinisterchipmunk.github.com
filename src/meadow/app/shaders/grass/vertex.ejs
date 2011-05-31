@@ -29,7 +29,7 @@ vec3 CalcTranslation(in vec3 vpos) {
 void main(void) {
   vBaseColor = VERTEX_COLOR;
   vTexCoords = VERTEX_TEXCOORDS;
-  vColorVariance = (noise(OBJECT_POSITION.xz*10.0)+1.0)/1.0;
+  vColorVariance = (cnoise(OBJECT_POSITION.xz*10.0)+1.0)/1.0;
 
   vec4 vpos = vec4(findRealPosition(VERTEX_POSITION.xyz), VERTEX_POSITION.w);
   vec3 norm = VERTEX_NORMAL;

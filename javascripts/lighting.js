@@ -138,5 +138,5 @@ LightSource.addResources({"directional_light":{"enabled":true,"shadowcaster":tru
 Material.addResources({"lighting_with_shadows":{"ambient":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"diffuse":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"specular":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"shininess":128,"layers":[{"type":"Lighting"},{"type":"ShadowMap"}]}});
 Jax.routes.root(MainController, "index");
 Jax.routes.map("main/index", MainController, "index");
-if (Jax.doVersionCheck) Jax.doVersionCheck('0.0.0.7');
+if (Jax.doVersionCheck) Jax.doVersionCheck('0.0.0.8');
 else alert('Your Jax gem version is newer than your Jax JavaScript library!\n\nRun `rake jax:update` to fix this.');

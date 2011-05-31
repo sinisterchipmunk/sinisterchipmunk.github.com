@@ -2,10 +2,7 @@
 require 'fileutils'
 include FileUtils
 
-class String
-  def red;   "\e[31m" + self + "\e[0m"; end
-  def green; "\e[32m" + self + "\e[0m"; end
-end
+require File.expand_path('string', File.dirname(__FILE__))
 
 class Merger
   attr_reader :base

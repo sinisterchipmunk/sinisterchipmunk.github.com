@@ -1,7 +1,7 @@
-Jax.Material.Electrical = Jax.Class.create(Jax.Material, {
+Jax.Material.Plasma = Jax.Class.create(Jax.Material, {
   initialize: function($super, options) {
     options = Jax.Util.normalizeOptions(options, {
-      shader: "electrical",
+      shader: "plasma",
 
       // You can specify default options (see +manifest.yml+) here.
     });
