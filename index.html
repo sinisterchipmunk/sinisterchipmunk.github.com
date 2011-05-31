@@ -23,6 +23,28 @@
             "Jax implementation of Perlin noise and simplex (improved Perlin) noise. Noise plays a huge role "+
             "in this demo, as it is used to dynamically generate the height map, wind variations, variations in "+
             "color for each blade of grass, and clouds."
+        },
+        {
+          name:"materials",
+          screenshot: 'materials.png',
+          source:"http://github.com/sinisterchipmunk/sinisterchipmunk.github.com/tree/master/src/materials",
+          desc:
+            "An example of some materials built quickly in a Jax project. Each material includes its own "+
+            "shader, which procedurally generates the texture used for the material in question. The built-in "+
+            "'improved' Perlin noise functions are used within the fragment shader for all of the materials in "+
+            "this demo."
+        },
+        {
+          name:"lights &amp; shadows",
+          filename:"lights_and_shadows",
+          screenshot: 'lighting.png',
+          source:"http://github.com/sinisterchipmunk/sinisterchipmunk.github.com/tree/master/src/lighting",
+          desc:
+            "Originally part of the Jax project itself, the Lighting &amp; Shadows demo was used for visually "+
+            "testing the default blinn-phong shading model, particularly where it involves multiple light "+
+            "sources. This example uses one of each of the default types of lights supported by Jax: Point, "+
+            "Directional and Spot. It also demonstrates shadow mapping "+
+            "in Jax, as each light source in the scene casts a shadow of the teapot onto the backdrop."
         }
       ];
     </script>
@@ -54,9 +76,9 @@
           var ejs = new EJS({
             text: "<div class='left'><img src='./images/screenshots/<%=screenshot%>' /></div>" +
                   "<table>" +
-                    "<tr><th><a href='<%=name%>.html'><%=name%></a></th></tr>" +
+                    "<tr><th><a href='<%=typeof(filename) == 'undefined' ? name : filename%>.html'><%=name%></a></th></tr>" +
                     "<tr><td><%=desc%></td></tr>" +
-                    "<tr><td><a class='source-link' href='<%=source%>'>[go to source]</a></td></tr>" +
+                    "<tr><td><a class='source-link' href='<%=source%>'>[see the source]</a></td></tr>" +
                   "</table>" +
                   ((i == demos.length-1) ? "" : 
                     "<div class='sep1'>&nbsp;</div>" +
