@@ -1,20 +1,13 @@
 describe("Shader 'granite'", function() {
-  var context, material, mesh;
+  var material, mesh;
 
-  beforeEach(function() {
-    context = new Jax.Context('webgl-canvas');
-    mesh = new Jax.Mesh.Quad();
-  });
+  beforeEach(function() { mesh = new Jax.Mesh.Quad(); });
   
-  /* dispose the context so it doesn't continue using
-     resources after the tests have completed */
-  afterEach(function() { context.dispose(); });
-
   describe("stand-alone", function() {
     beforeEach(function() { mesh.material = new Jax.Material.Granite(); });
 
-    xit("should render without error", function() {
-      expect(function() { mesh.render(context); }).not.toThrow();
+    it("should render without error", function() {
+      expect(function() { mesh.render(SPEC_CONTEXT); }).not.toThrow();
     });
   });
 
@@ -25,8 +18,8 @@ describe("Shader 'granite'", function() {
       }]});
     });
 
-    xit("should render without error", function() {
-      expect(function() { mesh.render(context); }).not.toThrow();
+    it("should render without error", function() {
+      expect(function() { mesh.render(SPEC_CONTEXT); }).not.toThrow();
     });
   });
 });

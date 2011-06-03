@@ -14,20 +14,8 @@
   <script type="text/javascript">
     var jsApiReporter;
     (function() {
-      var jasmineEnv = jasmine.getEnv();
-
-      jsApiReporter = new jasmine.JsApiReporter();
-      var trivialReporter = new jasmine.TrivialReporter();
-
-      jasmineEnv.addReporter(jsApiReporter);
-      jasmineEnv.addReporter(trivialReporter);
-
-      jasmineEnv.specFilter = function(spec) {
-        return trivialReporter.specFilter(spec);
-      };
-
       window.onload = function() {
-        jasmineEnv.execute();
+        setupJaxTestEnvironment();
         
         /*
           Create a canvas element and add it to the document. 
@@ -110,12 +98,6 @@
     Updates per second: <div id="jax_ups">(calculating...)</div>
     <a href="#" onclick="hideFramerate();return false;">Hide Framerate</a>
   </div>
-</div>
-<div>
-  <a href="#" onclick="context.current_controller.material = 'sun';return false;">Sun</a> |
-  <a href="#" onclick="context.current_controller.material = 'plasma';return false;">Plasma</a> |
-  <a href="#" onclick="context.current_controller.material = 'granite';return false;">Granite</a> |
-  <a href="#" onclick="context.current_controller.material = 'wood';return false;">Wood</a> |
 </div>
 <div id="jasmine_content"></div>
 </body>

@@ -1,20 +1,11 @@
 describe("Shader 'skybox'", function() {
-  var context, material, mesh;
-
-  beforeEach(function() {
-    context = new Jax.Context('webgl-canvas');
-    mesh = new Jax.Mesh.Quad();
-  });
-  
-  /* dispose the context so it doesn't continue using
-     resources after the tests have completed */
-  afterEach(function() { context.dispose(); });
+  var material, mesh;
 
   describe("stand-alone", function() {
     beforeEach(function() { mesh.material = new Jax.Material.Skybox(); });
 
-    xit("should render without error", function() {
-      expect(function() { mesh.render(context); }).not.toThrow();
+    it("should render without error", function() {
+      expect(function() { mesh.render(SPEC_CONTEXT); }).not.toThrow();
     });
   });
 
@@ -25,8 +16,8 @@ describe("Shader 'skybox'", function() {
       }]});
     });
 
-    xit("should render without error", function() {
-      expect(function() { mesh.render(context); }).not.toThrow();
+    it("should render without error", function() {
+      expect(function() { mesh.render(SPEC_CONTEXT); }).not.toThrow();
     });
   });
 });
