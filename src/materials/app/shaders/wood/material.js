@@ -15,8 +15,9 @@ Jax.Material.Wood = Jax.Class.create(Jax.Material, {
     uniforms.set('mvMatrix', context.getModelViewMatrix());
     uniforms.set('nMatrix', context.getNormalMatrix());
     uniforms.set('pMatrix', context.getProjectionMatrix());
+    uniforms.set('TIME', Jax.uptime);
 
-    this.setupNoise(context, mesh, options, uniforms);
+    Jax.noise.bind(context, uniforms);
   },
 
   setAttributes: function($super, context, mesh, options, attributes) {
@@ -24,7 +25,5 @@ Jax.Material.Wood = Jax.Class.create(Jax.Material, {
     attributes.set('VERTEX_COLOR',     mesh.getColorBuffer());
     attributes.set('VERTEX_NORMAL',    mesh.getNormalBuffer());
     attributes.set('VERTEX_TEXCOORDS', mesh.getTextureCoordsBuffer());
-  },
-  
-  helpers: function() { return [NoisyHelper]; }
+  }
 });

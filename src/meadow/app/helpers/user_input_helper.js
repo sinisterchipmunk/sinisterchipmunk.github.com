@@ -3,8 +3,8 @@ var UserInputHelper = (function() {
  
   return Jax.Helper.create({
     mouse_dragged: function(event) {
-      this.player.camera.rotate(0.01, [event.diffy, -event.diffx, 0]);
-      this.player.camera.orient(this.player.camera.getViewVector(), [0,1,0]);
+      this.player.camera.pitch(event.diffy * 0.01);
+      this.player.camera.yaw(-event.diffx  * 0.01);
     },
  
     key_pressed: function(event) {

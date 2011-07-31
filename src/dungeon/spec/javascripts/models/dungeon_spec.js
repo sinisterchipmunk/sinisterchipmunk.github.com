@@ -5,7 +5,7 @@ describe("Dungeon", function() {
     model = new Dungeon();
   });
 
-  it("does something", function() {
+  xit("does something", function() {
     expect(1).toEqual(1);
   });
 });

@@ -205,7 +205,7 @@ var Dungeon = (function() {
       var dir = this.player_start.direction.split(/,\s*/);
       
       player.camera.setPosition([pos[0], 0.5, pos[1]]);
-      player.camera.orient([dir[0], 0, dir[1]]);
+      player.camera.reorient([dir[0], 0, dir[1]]);
     },
     
     addTorches: function(name, world) {

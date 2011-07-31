@@ -1,5 +1,4 @@
 Dungeon.routes.map do
-  map 'door/index'
   map 'dungeon/index'
   root 'dungeon'
   # If not given a root controller, no controller will be used when the page is initially loaded.

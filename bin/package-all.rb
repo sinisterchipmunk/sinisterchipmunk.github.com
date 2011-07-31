@@ -3,7 +3,7 @@
 require File.expand_path('string', File.dirname(__FILE__))
 
 Dir["src/*"].each do |d|
-  if !system("cd #{d}; rake jax:package; cd ..")
+  if !system("cd #{d}; bundle exec jax package; cd ..")
     puts "uh oh...".red
     exit
   end

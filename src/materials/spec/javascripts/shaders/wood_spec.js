@@ -14,7 +14,7 @@ describe("Shader 'wood'", function() {
   describe("as a layer", function() {
     beforeEach(function() {
       mesh.material = new Jax.Material({layers:[{
-        type:"wood"
+        type:"Wood"
       }]});
     });
 

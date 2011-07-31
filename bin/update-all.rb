@@ -14,7 +14,7 @@ Dir["src/*"].each do |d|
     f.puts "source \"http://rubygems.org\"\n\ngem 'jax', '#{version}'"
   end
   
-  if !system("cd #{d}; bundle update jax --local; rake jax:update; cd ..")
+  if !system("cd #{d}; bundle update jax --local; bundle exec rake jax:update; cd ..")
     puts "uh oh...".red
     exit
   end

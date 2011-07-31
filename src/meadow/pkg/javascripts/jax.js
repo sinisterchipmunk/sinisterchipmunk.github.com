@@ -1,5 +1,25 @@
+var Jax = {
+  PRODUCTION: 1,
 
-var Jax = { PRODUCTION: 1, VERSION: "0.0.0.10" };
+  VERSION: "1.1.0.rc1",
+
+  webgl_not_supported_path: "/webgl_not_supported.html",
+
+  getGlobal: function() {
+    return (function() {
+      if (typeof(global) != 'undefined') return global;
+      else return window;
+    })();
+  },
+
+  reraise: function(original_error, new_error) {
+    if (original_error._stack) new_error._stack = original_error._stack;
+    else if (original_error.stack) new_error._stack = original_error.stack;
+    throw new_error;
+  },
+
+  click_speed: 0.2,
+};
 
 /* Called by Jax applications as of version 0.0.0.5 to alert the user to incomplete upgrades */
 Jax.doVersionCheck = function(targetVersion) {
@@ -15,6 +35,16 @@ Jax.doVersionCheck = function(targetVersion) {
 Jax.default_shader = "basic";
 
 /* Defines constants, functions, etc. that may exist in one browser but not in another */
+
+/* Compatibility layer for node.js */
+if (typeof(window) == "undefined")
+  Jax.getGlobal().window = Jax.getGlobal();
+
+if (typeof(document) == "undefined") {
+  Jax.getGlobal().document = require("helpers/node_dom_emulator");
+}
+
+
 Jax.Compatibility = (function() {
   var offsetTop = 1;
   var offsetLeft = 1;
@@ -2029,6 +2059,107 @@ quat4.str = function(quat) {
 	return '[' + quat[0] + ', ' + quat[1] + ', ' + quat[2] + ', ' + quat[3] + ']';
 }
 
+mat3.multiplyVec3 = function(matrix, vec, dest) {
+  if (!dest) dest = vec;
+
+  dest[0] = vec[0] * matrix[0] + vec[1] * matrix[3] + vec[2] * matrix[6];
+  dest[1] = vec[0] * matrix[1] + vec[1] * matrix[4] + vec[2] * matrix[7];
+  dest[2] = vec[0] * matrix[2] + vec[1] * matrix[5] + vec[2] * matrix[8];
+
+  return dest;
+};
+mat4.IDENTITY = mat4.identity(mat4.create());
+
+quat4.toAngleAxis = function(src, dest) {
+  if (!dest) dest = src;
+
+  var sqrlen = src[0]*src[0]+src[1]*src[1]+src[2]*src[2];
+  if (sqrlen > 0)
+  {
+    dest[3] = 2 * Math.acos(src[3]);
+    var invlen = Math.invsrt(sqrlen);
+    dest[0] = src[0]*invlen;
+    dest[1] = src[1]*invlen;
+    dest[2] = src[2]*invlen;
+  } else {
+    dest[3] = 0;
+    dest[0] = 1;
+    dest[1] = 0;
+    dest[2] = 0;
+  }
+
+  return dest;
+};
+
+quat4.fromAngleAxis = function(angle, axis, dest) {
+  if (!dest) dest = quat4.create();
+
+  var half = angle * 0.5;
+  var s = Math.sin(half);
+  dest[3] = Math.cos(half);
+  dest[0] = s * axis[0];
+  dest[1] = s * axis[1];
+  dest[2] = s * axis[2];
+
+  return dest;
+};
+
+quat4.IDENTITY = quat4.create([0, 0, 0, 1]);
+
+if (typeof(vec2) == 'undefined') var vec2 = {};
+
+vec2.create = function(src) {
+  var vec = new glMatrixArrayType(2);
+  if (src) { vec[0] = src[0]; vec[1] = src[1]; }
+  return vec;
+};
+
+vec3.toQuatRotation = function(first, second, dest) {
+  var dot = vec3.dot(first, second);
+  if (dot >= 1.0) return quat4.IDENTITY;
+  if (dot < (0.000001 - 1.0)) { // 180 degrees
+    var axis = vec3.cross(vec3.UNIT_X, first, vec3.create());
+    if (vec3.length(axis) < Math.EPSILON) // pick another if colinear
+      axis = vec3.cross(vec3.UNIT_Y, first, axis);
+    vec3.normalize(axis);
+    return quat4.fromAngleAxis(Math.PI, axis, dest);
+  } else {
+    var s = Math.sqrt((1+dot)*2);
+    var invs = 1 / s;
+    var c = vec3.cross(first, second, vec3.create());
+    if (!dest) dest = quat4.create();
+    dest[0] = c[0] * invs;
+    dest[1] = c[1] * invs;
+    dest[2] = c[2] * invs;
+    dest[3] = s * 0.5;
+    return quat4.normalize(dest);
+  }
+};
+
+vec3.multiply = function(a, b, dest) {
+  if (!dest) dest = a;
+  dest[0] = a[0] * b[0];
+  dest[1] = a[1] * b[1];
+  dest[2] = a[2] * b[2];
+  return dest;
+}
+
+vec3.UNIT_X = vec3.create([1,0,0]);
+
+vec3.UNIT_Y = vec3.create([0,1,0]);
+
+vec3.UNIT_Z = vec3.create([0,0,1]);
+if (typeof(vec4) == 'undefined') var vec4 = {};
+
+vec4.create = function(src) {
+  var dest = new glMatrixArrayType(4);
+  if (src) {
+    dest[0] = src[0];
+    dest[1] = src[1];
+    dest[2] = src[2];
+  }
+  return dest;
+};
 };
 /*
   Core functions borrowed from Prototype. I don't think these are stepping on anyone's (e.g. jQuery's) toes,
@@ -2219,6 +2350,14 @@ Jax.Class = (function() {
     }
   };
 })();
+Jax.Helper = {
+  instances: [],
+
+  create: function(methods) {
+    Jax.Helper.instances.push(methods);
+    return methods;
+  }
+};
 Math.EPSILON = Math.EPSILON || 0.00001;
 
 
@@ -2240,7 +2379,11 @@ Math.equalish = Math.equalish || function(a, b) {
 
   if (a.length != b.length) return false;
   for (var i = 0; i < a.length; i++)
-    if (Math.abs(a[i] - b[i]) > Math.EPSILON) return false;
+    if (a[i] == undefined || b[i] == undefined ||
+        isNaN(a[i]) != isNaN(b[i]) ||
+        isFinite(a[i]) != isFinite(b[i]) ||
+        Math.abs(a[i] - b[i]) > Math.EPSILON)
+      return false;
   return true;
 };
 
@@ -2369,8 +2512,9 @@ Jax.Util = {
   },
 
   enumName: function(glEnum) {
-    for (var i in window) {
-      if (i.indexOf("GL_") == 0 && window[i] == glEnum)
+    var global = Jax.getGlobal();
+    for (var i in global) {
+      if (i.indexOf("GL_") == 0 && global[i] == glEnum)
         return i;
     }
     return "(unrecognized enum: "+glEnum+" [0x"+parseInt(glEnum).toString(16)+"])";
@@ -2383,7 +2527,11 @@ Jax.Util = {
       klass.addMethods(ApplicationHelper);
     }
     if (klass.prototype.helpers) {
-      var helper_array = klass.prototype.helpers.call(klass);
+      var helper_array;
+      if (typeof(klass.prototype.helpers) == "function")
+        helper_array = klass.prototype.helpers.call(klass);
+      else helper_array = klass.prototype.helpers;
+
       for (var i = 0; i < helper_array.length; i++) {
         helpers.push(helper_array[i]);
         klass.addMethods(helper_array[i]);
@@ -2392,8 +2540,6 @@ Jax.Util = {
     return helpers;
   }
 };
-
-Jax.IDENTITY_MATRIX = mat4.identity(mat4.create());
 
 Jax.MatrixStack = (function() {
   var MODEL = 1, VIEW = 2, PROJECTION = 3;
@@ -2543,15 +2689,15 @@ Jax.MatrixStack = (function() {
         modelview_projection: [mat4.create()]
       };
 
-      this.loadModelMatrix(Jax.IDENTITY_MATRIX);
-      this.loadViewMatrix(Jax.IDENTITY_MATRIX);
-      this.loadProjectionMatrix(Jax.IDENTITY_MATRIX); // there's no known data about the viewport at this time.
+      this.loadModelMatrix(mat4.IDENTITY);
+      this.loadViewMatrix(mat4.IDENTITY);
+      this.loadProjectionMatrix(mat4.IDENTITY); // there's no known data about the viewport at this time.
     }
   });
 })();
 
 window.debugAssert = function(expr, msg) {
-  if (Jax.environment != "production" && !expr)
+  if (Jax.environment != Jax.PRODUCTION && !expr)
   {
     var error = new Error(msg || "debugAssert failed");
     if (error.stack) error = new Error((msg || "debugAssert failed")+"\n\n"+error.stack);
@@ -2606,17 +2752,30 @@ if (glMatrixArrayType.prototype.toString != Array.prototype.toString) {
  */
 
 
-window.requestAnimFrame = (function() {
-  return window.requestAnimationFrame ||
-         window.webkitRequestAnimationFrame ||
-         window.mozRequestAnimationFrame ||
-         window.oRequestAnimationFrame ||
-         window.msRequestAnimationFrame ||
-         function(/* function FrameRequestCallback */ callback, /* DOMElement Element */ element) {
-           window.setTimeout(callback, 1000/60);
-         };
-})();
-
+if (typeof(window) == "undefined") {
+  global.requestAnimFrame = (function() {
+    return global.requestAnimationFrame ||
+           global.webkitRequestAnimationFrame ||
+           global.mozRequestAnimationFrame ||
+           global.oRequestAnimationFrame ||
+           global.msRequestAnimationFrame ||
+           function(/* function FrameRequestCallback */ callback, /* DOMElement Element */ element) {
+             setTimeout(callback, 1000/60);
+           };
+  })();
+}
+else {
+  window.requestAnimFrame = (function() {
+    return window.requestAnimationFrame ||
+           window.webkitRequestAnimationFrame ||
+           window.mozRequestAnimationFrame ||
+           window.oRequestAnimationFrame ||
+           window.msRequestAnimationFrame ||
+           function(/* function FrameRequestCallback */ callback, /* DOMElement Element */ element) {
+             setTimeout(callback, 1000/60);
+           };
+  })();
+}
 
 
 (function() {
@@ -2733,14 +2892,6 @@ window.requestAnimFrame = (function() {
     return new Delegator(this, arguments);
   };
 })();
-Jax.Helper = {
-  instances: [],
-
-  create: function(methods) {
-    Jax.Helper.instances.push(methods);
-    return methods;
-  }
-};
 (function() {
   function initProperties(self, data) {
     data = Jax.Util.normalizeOptions(data, {});
@@ -2751,7 +2902,7 @@ Jax.Helper = {
       for (attribute in data) {
         switch(attribute) {
           case 'position':    self.camera.setPosition(Jax.Util.vectorize(data[attribute])); break;
-          case 'direction':   self.camera.orient(Jax.Util.vectorize(data[attribute])); break;
+          case 'direction':   self.camera.setDirection(Jax.Util.vectorize(data[attribute])); break;
           case 'mesh':
             if (data[attribute].isKindOf(Jax.Mesh)) self.mesh = data[attribute];
             else throw new Error("Unexpected value for mesh:\n\n"+JSON.stringify(data[attribute]));
@@ -3036,9 +3187,9 @@ within Jax.Context.
  */
 
 
-window['WEBGL_CONTEXT_NAME'] = "experimental-webgl";
-window['WEBGL_CONTEXT_OPTIONS'] = {stencil:true};
-window['GL_METHODS'] = {};
+Jax.getGlobal()['WEBGL_CONTEXT_NAME'] = "experimental-webgl";
+Jax.getGlobal()['WEBGL_CONTEXT_OPTIONS'] = {stencil:true};
+Jax.getGlobal()['GL_METHODS'] = {};
 
 (function() {
   var canvas = document.createElement("canvas");
@@ -3057,8 +3208,7 @@ window['GL_METHODS'] = {};
   try {
     var gl = canvas.getContext(WEBGL_CONTEXT_NAME);
   } catch(e) {
-    document.location.pathname = "/webgl_not_supported.html";
-    throw new Error("WebGL is disabled or is not supported by this browser!");
+    gl = null;
   }
 
   if (gl) {
@@ -3070,6 +3220,7 @@ window['GL_METHODS'] = {};
         camelized_method_name = "gl" + method_name.substring(0, 1).toUpperCase() + camelized_method_name;
 
         /* we'll add a layer here to check for render errors, only in development mode */
+        /* FIXME Chrome has serious performance issues related to gl.getError(). Disabling under Chrome for now. */
         var func = "(function "+camelized_method_name+"() {"
                  + "  var result;"
                  + "  if ("+(method_name == 'getError')+" || Jax.environment == Jax.PRODUCTION)"
@@ -3077,13 +3228,13 @@ window['GL_METHODS'] = {};
                  + "  else {"
                  + "    try { "
                  + "      result = this.gl."+method_name+".apply(this.gl, arguments);"
-                 + "      this.checkForRenderErrors();"
+                 + "      if ("+(navigator.userAgent.toLowerCase().indexOf('chrome') == -1)+")"
+                 + "        this.checkForRenderErrors();"
                  + "    } catch(e) { "
                  + "      var args = [], i;"
                  + "      for (i = 0; i < arguments.length; i++) args.push(arguments[i]);"
                  + "      try { args = JSON.stringify(args); } catch(jsonErr) { args = args.toString(); }"
                  + "      if (!e.stack) e = new Error(e.toString());"
-                 + "      alert(e+\"\\n\\n\"+e.stack);"
                  + "      this.handleRenderError('"+method_name+"', args, e);"
                  + "    }"
                  + "  }"
@@ -3094,17 +3245,17 @@ window['GL_METHODS'] = {};
       }
       else
       {
-        /* define the GL enums globally so we don't need a context to reference them */
+        /* define the GL enums Jax.getGlobal()ly so we don't need a context to reference them */
         if (!/[a-z]/.test(method_name)) // no lowercase letters
-          window[('GL_'+method_name)] = gl[method_name];
+          Jax.getGlobal()[('GL_'+method_name)] = gl[method_name];
       }
     }
 
-    /* define some extra globals that the above didn't generate */
-    window['GL_DEPTH_COMPONENT'] = gl.DEPTH_COMPONENT || gl.DEPTH_COMPONENT16;
-    window['GL_TEXTURES'] = [];
-    for (i = 0; i < 32; i++) window['GL_TEXTURES'][i] = gl["TEXTURE"+i];
-    window['GL_MAX_ACTIVE_TEXTURES'] = gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS);
+    /* define some extra Jax.getGlobal()s that the above didn't generate */
+    Jax.getGlobal()['GL_DEPTH_COMPONENT'] = gl.DEPTH_COMPONENT || gl.DEPTH_COMPONENT16;
+    Jax.getGlobal()['GL_TEXTURES'] = [];
+    for (i = 0; i < 32; i++) Jax.getGlobal()['GL_TEXTURES'][i] = gl["TEXTURE"+i];
+    Jax.getGlobal()['GL_MAX_ACTIVE_TEXTURES'] = gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS);
   }
 
   /* import other webgl files */
@@ -3385,13 +3536,13 @@ Jax.Shader = (function() {
 })();
 
 
-Jax.Shader.max_varyings = gl.getParameter(GL_MAX_VARYING_VECTORS);
-Jax.Shader.max_vertex_uniforms = gl.getParameter(GL_MAX_VERTEX_UNIFORM_VECTORS);
-Jax.Shader.max_fragment_uniforms = gl.getParameter(GL_MAX_FRAGMENT_UNIFORM_VECTORS);
-Jax.Shader.max_attributes = gl.getParameter(GL_MAX_VERTEX_ATTRIBS);
-Jax.Shader.max_vertex_textures = gl.getParameter(GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS);
+Jax.Shader.max_varyings          = gl ? gl.getParameter(GL_MAX_VARYING_VECTORS) : 0;
+Jax.Shader.max_vertex_uniforms   = gl ? gl.getParameter(GL_MAX_VERTEX_UNIFORM_VECTORS) : 0;
+Jax.Shader.max_fragment_uniforms = gl ? gl.getParameter(GL_MAX_FRAGMENT_UNIFORM_VECTORS) : 0;
+Jax.Shader.max_attributes        = gl ? gl.getParameter(GL_MAX_VERTEX_ATTRIBS) : 0;
+Jax.Shader.max_vertex_textures   = gl ? gl.getParameter(GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS) : 0;
 
-Jax.Shader.max_uniforms = Math.min(Jax.Shader.max_fragment_uniforms, Jax.Shader.max_vertex_uniforms);
+Jax.Shader.max_uniforms           = Math.min(Jax.Shader.max_fragment_uniforms, Jax.Shader.max_vertex_uniforms);
 
 Jax.Shader.Delegator = (function() {
   return Jax.Class.create({
@@ -3510,8 +3661,8 @@ Jax.Shader.UniformDelegator = (function() {
                 throw new Error("Unexpected attribute type: "+v.type+" ("+JSON.stringify(v)+")");
             }
           } catch(e) {
-            alert("Failed to set uniform for "+name+' ('+value+") in shader program:\n\n"+e+"\n\n"+e.stack);
-            throw e;
+            var error = new Error("Failed to set uniform for "+name+' ('+value+") in shader program:\n\n"+e);
+            Jax.reraise(e, error);
           }
         }
       }
@@ -3691,18 +3842,16 @@ Jax.Shader.Program = (function() {
 
       try {
         var buffer;
-        if (buffer = mesh.getIndexBuffer()) {
+        if ((buffer = mesh.getIndexBuffer()) && buffer.length > 0) {
           buffer.bind(context);
           context.glDrawElements(options.draw_mode, buffer.length, GL_UNSIGNED_SHORT, 0);
         }
-        else if (buffer = mesh.getVertexBuffer()) {
+        else if ((buffer = mesh.getVertexBuffer()) && buffer.length > 0) {
           context.glDrawArrays(options.draw_mode, 0, buffer.length);
         }
       } catch(e) {
-        var message = "Fatal error encountered while drawing mesh:\n\n"+e+"\n\nShaders: "+this.getShaderNames();
-        alert(message);
-        console.error(message);
-        throw e;
+        var error = new Error("Fatal error encountered while drawing mesh:\n\n"+e+"\n\nShaders: "+this.getShaderNames());
+        Jax.reraise(e, error);
       }
     },
 
@@ -4178,7 +4327,7 @@ Jax.Material = (function() {
 
     adaptShaderToHardwareLimits: function(shader, error) {
       function log(msg) {
-        if (window.console)
+        if (Jax.getGlobal().console)
           console.log(msg);
         else
           setTimeout(function() { throw new Error(msg); }, 1);
@@ -4404,20 +4553,200 @@ Jax.Material.create("paraboloid-depthmap", {type:"Paraboloid",default_shader:"pa
 Jax.Material.create("picking", {type:"Picking"});
 Jax.Core = {};
 
-Jax.Core.Face = Jax.Class.create({
-  initialize: function(vertexIndices) {
-    if (arguments.length > 1)
-      this.vertexIndices = vec3.create(arguments);
-    else if (vertexIndices)
-      this.vertexIndices = vec3.create(vertexIndices);
+Jax.DataSegment = (function() {
+  var DataGroup = Jax.Class.create({
+    initialize: function(raw, size) {
+      this.raw = raw;
+      this.type = raw.type;
+      this.size = size;
+      this.length = 0;
+    },
+
+    push: function(seg) { this[this.length] = seg; this.length++; return seg; },
+    pop: function() { this.length--; var ret = this[this.length]; delete this[this.length]; return ret; },
+    getRawData: function() { return this.raw; }
+  });
+
+  function populateGroup(self, group, size) {
+    var i, j, bytes = self.type.BYTES_PER_ELEMENT, len = 0, buf;
+    for (i = 0; i < self.array.length; i += size) {
+      if (buf = group[len]) {
+        buf.setArray(new self.type(self.buffer, self.byteOffset + i*bytes, size));
+      }
+      else {
+        buf = new Jax.DataSegment(self.type, self.buffer, self.byteOffset + i*bytes, size);
+        group.push(buf);
+      }
+      len++;
+    }
+    while (group.length > len) group.pop();
   }
-});
-Jax.Core.Edge = Jax.Class.create({
-  initialize: function() {
-    this.faceIndices = [];
-    this.vertexIndices = [];
-  }
-});
+
+  var klass = Jax.Class.create({
+    initialize: function(type, buffer, byteOffset, length) {
+      this.type = type;
+      this.groups = [];
+      try {
+        if (arguments.length == 2)
+          if (buffer instanceof this.type) this.setArray(buffer);
+          else this.setArray(new type(buffer));
+        else if (arguments.length == 1)
+          this.setArray(type);
+        else
+          this.setArray(new type(buffer, byteOffset, length));
+      } catch(e) {
+        throw new Error("Error: "+e+" while constructing segment from "+
+                        "("+type+", "+buffer+"["+buffer.byteLength+"], "+byteOffset+", "+length+")");
+      }
+    },
+
+    setArray: function(buf) {
+
+      this.array  = buf;
+
+      this.length = buf.length;
+
+      this.buffer = buf.buffer;
+
+      this.byteOffset = buf.byteOffset;
+
+      this.byteLength = buf.byteLength;
+
+
+      for (var i = 0; i < this.groups.length; i++) {
+        var group = this.groups[i];
+        var size = group.size;
+        populateGroup(this, group, size);
+      }
+
+      return this;
+    },
+
+    group: function(size) {
+      if (this.array.length % size != 0)
+        throw new Error("Data segment size "+this.array.length+" is not divisible by group size "+size);
+      var group = new DataGroup(this, size);
+      populateGroup(this, group, size);
+      this.groups.push(group);
+      return group;
+    },
+
+    removeGroup: function(group) {
+      var index;
+      if (typeof(group) == 'number') index = group;
+      else index = this.groups.indexOf(group);
+
+      if (index != -1)
+        this.groups.splice(index, 1);
+      return this;
+    },
+
+    set: function(i, v) {
+      this.array.set.apply(this.array, arguments);
+    },
+
+    subarray: function(begin, end) {
+      return new Jax.DataSegment(this.type, this.array.subarray(begin, end));
+    },
+
+    toString: function() {
+      return "{array:"+this.array.toString()+"}";
+    }
+  });
+
+  return klass;
+})();
+
+Jax.DataRegion = (function() {
+  var CHUNK_SIZE = 1024;
+
+  var klass = Jax.Class.create({
+    initialize: function(bytes) {
+      this.allocate(bytes || CHUNK_SIZE);
+      this.offset = 0;
+      this.segments = [];
+    },
+
+    allocate: function(amount) {
+      if (!amount && typeof(amount) != 'number') throw new Error("amount required\n\n"+new Error().stack);
+      if (isNaN(amount)) throw new Error("NaN\n\n"+new Error().stack);
+      if (!this.data) {
+        this.data = new ArrayBuffer(amount);
+        return this;
+      }
+
+      var newlen = this.data.byteLength;
+      if (newlen >= amount) return this;
+      newlen += (parseInt(amount / CHUNK_SIZE) + 1) * CHUNK_SIZE;
+
+      this.data = new ArrayBuffer(newlen);
+
+      if (this.segments.length > 0) {
+        var buf = this.segments[0].array;
+        this.remap(this.segments[0], this.segments[0].length).set(buf);
+      }
+
+      return this;
+    },
+
+    map: function(type, length, values) {
+      if (typeof(length) != "number") {
+        values = length;
+        length = values.length;
+      }
+
+      this.allocate(this.offset + length * type.BYTES_PER_ELEMENT);
+      var segment = new Jax.DataSegment(type, this.data, this.offset, length);
+      this.segments.push(segment);
+      segment.type = type;
+      this.offset += length * type.BYTES_PER_ELEMENT;
+
+      if (values) segment.set(values);
+      return segment;
+    },
+
+    remap: function(segment, length, values, offset) {
+      if (offset == undefined) offset = segment.byteOffset;
+      if (!values && typeof(length) != 'number') {
+        values = length;
+        length = values.length;
+      }
+
+      var oldLength = segment.length;
+      if (oldLength == length && offset == segment.byteOffset) {
+        if (values) segment.set(values);
+        return segment;
+      }
+
+      this.allocate(offset + length * segment.type.BYTES_PER_ELEMENT);
+
+      var newAry = new segment.type(this.data, offset, length);
+        if (values) {
+        try {
+          newAry.set(values);
+          oldLength = Math.max(values.length, oldLength);
+        } catch(e) {
+          throw new Error("Values are not valid: "+JSON.stringify(values));
+        }
+      }
+      segment.setArray(newAry);
+      var index = this.segments.indexOf(segment);
+
+      if (index < this.segments.length-1) {
+        var next = this.segments[index+1];
+        var buf = next.array;
+        this.remap(next, next.length, null, offset + length * segment.type.BYTES_PER_ELEMENT).set(buf);
+      }
+
+      for (var i = oldLength; i < length; i++)
+        segment[i] = 0;
+
+      return segment;
+    }
+  });
+
+  return klass;
+})();
 Jax.Buffer = (function() {
   function each_gl_buffer(self, func)
   {
@@ -4427,7 +4756,6 @@ Jax.Buffer = (function() {
 
   return Jax.Class.create({
     initialize: function(bufferType, classType, drawType, jsarr, itemSize) {
-      if (jsarr.length == 0) throw new Error("No elements in array to be buffered!");
       if (!itemSize) throw new Error("Expected an itemSize - how many JS array elements represent a single buffered element?");
       this.classType = classType;
       this.itemSize = itemSize;
@@ -4440,20 +4768,28 @@ Jax.Buffer = (function() {
 
     refresh: function() {
       var self = this;
-      if (self.classTypeInstance)
-        for (var i = 0; i < self.js.length; i++)
-          self.classTypeInstance[i] = self.js[i];
-      else
-        self.classTypeInstance = new self.classType(self.js);
-
-      self.numItems = self.length = self.js.length / self.itemSize;
+      var instance = this.refreshTypedArray();
       if (!self.gl) return;
 
       each_gl_buffer(self, function(context, buffer) {
-        buffer.numItems = buffer.length = self.js.length;
         context.glBindBuffer(self.bufferType, buffer);
-        context.glBufferData(self.bufferType, self.classTypeInstance, self.drawType);
+        context.glBufferData(self.bufferType, instance, self.drawType);
       });
+
+      return this;
+    },
+
+    refreshTypedArray: function() {
+      var self = this;
+      var instance = this.getTypedArray();
+      instance.set(self.js);
+
+      self.numItems = self.length = self.js.length / self.itemSize;
+      return instance;
+    },
+
+    getTypedArray: function() {
+      return this.classTypeInstance = this.classTypeInstance || new this.classType(this.js);
     },
 
     dispose: function() {
@@ -4463,11 +4799,12 @@ Jax.Buffer = (function() {
         self.gl[context.id] = null;
       });
       self.gl = {};
+      return self;
     },
 
     isDisposed: function() { return !this.gl; },
 
-    bind: function(context) { context.glBindBuffer(this.bufferType, this.getGLBuffer(context)); },
+    bind: function(context) { context.glBindBuffer(this.bufferType, this.getGLBuffer(context)); return this; },
 
     getGLBuffer: function(context)
     {
@@ -4512,6 +4849,35 @@ Jax.TextureCoordsBuffer = Jax.Class.create(Jax.FloatArrayBuffer, {
 
 Jax.NormalBuffer = Jax.Class.create(Jax.FloatArrayBuffer, {
   initialize: function($super, jsarr) { $super(jsarr, 3); }
+});
+
+
+Jax.DataBuffer = Jax.Class.create(Jax.Buffer, {
+
+  initialize: function($super, bufferType, data, size) {
+    size = size || 1;
+    if (data.getRawData) {
+      size = data.size;
+      this.mirror = data;
+      this.data = data.getRawData();
+    } else {
+      this.data = data;
+    }
+    var type = this.data.type;
+
+    if (!size || !type) throw new Error("Couldn't detect element size or type! Use a different buffer.");
+
+    $super(bufferType, type, GL_DYNAMIC_DRAW, this.data.array, size);
+  },
+
+  refreshTypedArray: function() {
+    this.numItems = this.length = (this.mirror ? this.mirror.length : this.data.length / this.itemSize);
+    return this.getTypedArray();
+  },
+
+  getTypedArray: function() {
+    return this.data.array;
+  }
 });
 Jax.Framebuffer = (function() {
   function build(context, self) {
@@ -4589,7 +4955,7 @@ Jax.Framebuffer = (function() {
         throw new Error("Jax.Framebuffer: all attachments must have the same dimensions. (GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS)");
       case GL_FRAMEBUFFER_UNSUPPORTED:
         throw new Error("Jax.Framebuffer: the requested framebuffer layout is unsupported on this hardware. (GL_FRAMEBUFFER_UNSUPPORTED)");
-      case (window['GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER'] || 0x8cdb):
+      case (Jax.getGlobal()['GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER'] || 0x8cdb):
         throw new Error("Jax.Framebuffer: make sure the framebuffer has at least 1 texture attachment. (GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER)");
       default:
         var which;
@@ -4633,189 +4999,350 @@ Jax.Framebuffer = (function() {
         callback();
         this.unbind(context);
       }
+
+      return this;
     },
 
     bind: function(context, callback) {
       if (!this.getHandle(context)) build(context, this);
       context.glBindFramebuffer(GL_FRAMEBUFFER, this.getHandle(context));
 
-
       if (callback) {
         callback.call(this);
         this.unbind(context);
       }
+
+      return this;
     },
 
     unbind: function(context) {
       context.glBindFramebuffer(GL_FRAMEBUFFER, null);
+      return this;
     },
 
     viewport: function(context) {
       context.glViewport(0,0,this.options.width,this.options.height);
+      return this;
     },
 
-    getTextureBuffer: function(context, index) { return this.getHandle(context) && this.getHandle(context).textures[index]; },
-    getTextureBufferHandle: function(context, index) { return this.getTextureBuffer().getHandle(context); },
+    getTexture: function(context, index) {
+      return this.getHandle(context) && this.getHandle(context).textures[index];
+    },
+
+    getTextureHandle: function(context, index) {
+      return this.getTexture(context, index).getHandle(context);
+    },
+
+    getTextureBuffer: function(context, index) {
+      alert("Jax.Framebuffer#getTextureBuffer(context, index) is deprecated.\n"+
+            "Please use Jax.Framebuffer#getTexture(context, index) instead.\n\n"+
+            "Stack trace:\n\n"+
+            (new Error().stack || "(unavailable)"));
+      return this.getTexture(context, index);
+    },
+
+    getTextureBufferHandle: function(context, index) {
+      alert("Jax.Framebuffer#getTextureBufferHandle(context, index) is deprecated.\n"+
+            "Please use Jax.Framebuffer#getTextureHandle(context, index) instead.\n\n"+
+            "Stack trace:\n\n"+
+            (new Error().stack || "(unavailable)"));
+      return this.getTextureHandle(context, index);
+    },
 
     getHandle: function(context) { return this.handles[context.id]; },
-    setHandle: function(context, handle) { this.handles[context.id] = handle; }
+
+    setHandle: function(context, handle) { this.handles[context.id] = handle; return this; }
   });
 })();
 
 Jax.Mesh = (function() {
-  function setColorCoords(self, count, color, coords) {
-    var i, j;
-    var num_colors = color.length;
-    if (num_colors > 4) throw new Error("Color should have at most 4 components");
-    for (i = 0; i < count*4; i += 4)
+function makeTangentBuffer(self) {
+  var normals = self.getNormalBuffer();
+  var vertices = self.getVertexBuffer();
+  var texcoords = self.getTextureCoordsBuffer();
+  var indices = self.getIndexBuffer();
+  if (!normals || !vertices || !texcoords) return null;
+
+  var tangentBuffer = self.buffers.tangent_buffer;
+  normals = normals.js;
+  vertices = vertices.js;
+  texcoords = texcoords.js;
+  if (indices && indices.length > 0) indices = indices.js;
+  else indices = null;
+
+  var tangents = tangentBuffer ? tangentBuffer.js : [];
+  var tan1 = [], tan2 = [], a;
+  var v1 = vec3.create(), v2 = vec3.create(), v3 = vec3.create();
+  var w1 = [], w2 = [], w3 = [];
+  var vertcount;
+  var x1, x2, y1, y2, z1, z2, s1, s2, t1, t2, r;
+  var dif = [];
+  var sdir = vec3.create(), tdir = vec3.create();
+
+  function setv(v, a) { v[0] = vertices[a*3];  v[1] = vertices[a*3+1];  v[2] = vertices[a*3+2]; }
+  function setw(w, a) { w[0] = texcoords[a*2]; w[1] = texcoords[a*2+1]; }
+  function sett1(a) { tan1[a] = tan1[a] || vec3.create(); vec3.add(tan1[a], sdir, tan1[a]); }
+  function sett2(a) { tan2[a] = tan2[a] || vec3.create(); vec3.add(tan2[a], tdir, tan2[a]); }
+  function findTangentVector(a1, a2, a3) {
+    if (indices) { a1 = indices[a1]; a2 = indices[a2]; a3 = indices[a3]; }
+
+    setv(v1, a1); setv(v2, a2); setv(v3, a3);
+    setw(w1, a1); setw(w2, a2); setw(w3, a3);
+    x1 = v2[0] - v1[0]; x2 = v3[0] - v1[0];
+    y1 = v2[1] - v1[1]; y2 = v3[1] - v1[1];
+    z1 = v2[2] - v1[2]; z2 = v3[2] - v1[2];
+    s1 = w2[0] - w1[0]; s2 = w3[0] - w1[0];
+    t1 = w2[1] - w1[1]; t2 = w3[1] - w1[1];
+    r = 1.0 / (s1 * t2 - s2 * t1);
+
+    sdir[0] = (t2 * x1 - t1 * x2) * r; sdir[1] = (t2 * y1 - t1 * y2) * r; sdir[2] = (t2 * z1 - t1 * z2) * r;
+    tdir[0] = (s1 * x2 - s2 * x1) * r; tdir[1] = (s1 * y2 - s2 * y1) * r; tdir[2] = (s1 * z2 - s2 * z1) * r;
+
+    if (isNaN(sdir[0]) || isNaN(sdir[1]) || isNaN(sdir[2]) ||
+        isNaN(tdir[0]) || isNaN(tdir[1]) || isNaN(tdir[2]) )
     {
-      for (j = 0; j < num_colors; j++)
-        coords[i+j] = color[j];
-      for (j = num_colors; j < 4; j++) {
-        coords[i+j] = 1;
+      sdir[0] = sdir[1] = sdir[2] = tdir[0] = tdir[1] = tdir[2] = 0;
+    }
+    sett1(a1); sett1(a2); sett1(a3);
+    sett2(a1); sett2(a2); sett2(a3);
+  }
+
+  vertcount = indices && indices.length > 0 ? indices.length : normals.length / 3;
+
+  /* we need to pass the vertices into findTangentVector differently depending on draw mode */
+  /* TODO refactor: merge this with mesh support */
+  switch(self.draw_mode) {
+    case GL_TRIANGLE_STRIP:
+      for (a = 2; a < vertcount; a += 2) {
+        findTangentVector(a-2, a-1, a);
+        findTangentVector(a, a-1, a+1);
       }
-    }
+      break;
+    case GL_TRIANGLES:
+      for (a = 0; a < vertcount; a += 3)
+        findTangentVector(a, a+1, a+2);
+      break;
+    case GL_TRIANGLE_FAN:
+      for (a = 2; a < vertcount; a++)
+        findTangentVector(0, a-1, a);
+      break;
+    default:
+      throw new Error("Cannot calculate tangent space for draw mode: "+Jax.Util.enumName(self.draw_mode));
   }
 
-  function makeTangentBuffer(self) {
-    var normals = self.getNormalBuffer();
-    var vertices = self.getVertexBuffer();
-    var texcoords = self.getTextureCoordsBuffer();
-    var indices = self.getIndexBuffer();
-    if (!normals || !vertices || !texcoords) return null;
+  var normal = vec3.create();
 
-    var tangentBuffer = self.buffers.tangent_buffer;
-    normals = normals.js;
-    vertices = vertices.js;
-    texcoords = texcoords.js;
-    if (indices) indices = indices.js;
+  while (tangents.length > vertcount) tangents.pop();
 
-    var tangents = tangentBuffer ? tangentBuffer.js : [];
-    var tan1 = [], tan2 = [], a;
-    var v1 = vec3.create(), v2 = vec3.create(), v3 = vec3.create();
-    var w1 = [], w2 = [], w3 = [];
-    var vertcount;
-    var x1, x2, y1, y2, z1, z2, s1, s2, t1, t2, r;
-    var dif = [];
-    var sdir = vec3.create(), tdir = vec3.create();
+  var b;
+  for (b = 0; b < vertcount; b++) {
 
-    function setv(v, a) { v[0] = vertices[a*3];  v[1] = vertices[a*3+1];  v[2] = vertices[a*3+2]; }
-    function setw(w, a) { w[0] = texcoords[a*2]; w[1] = texcoords[a*2+1]; }
-    function sett1(a) { tan1[a] = tan1[a] || vec3.create(); vec3.add(tan1[a], sdir, tan1[a]); }
-    function sett2(a) { tan2[a] = tan2[a] || vec3.create(); vec3.add(tan2[a], tdir, tan2[a]); }
-    function findTangentVector(a1, a2, a3) {
-      if (indices) { a1 = indices[a1]; a2 = indices[a2]; a3 = indices[a3]; }
+    if (indices) a = indices[b];
+    else a = b;
 
-      setv(v1, a1); setv(v2, a2); setv(v3, a3);
-      setw(w1, a1); setw(w2, a2); setw(w3, a3);
-      x1 = v2[0] - v1[0]; x2 = v3[0] - v1[0];
-      y1 = v2[1] - v1[1]; y2 = v3[1] - v1[1];
-      z1 = v2[2] - v1[2]; z2 = v3[2] - v1[2];
-      s1 = w2[0] - w1[0]; s2 = w3[0] - w1[0];
-      t1 = w2[1] - w1[1]; t2 = w3[1] - w1[1];
-      r = 1.0 / (s1 * t2 - s2 * t1);
+    normal[0] = normals[a*3]; normal[1] = normals[a*3+1]; normal[2] = normals[a*3+2];
+    vec3.scale(normal, vec3.dot(normal, tan1[a]), dif);
+    vec3.subtract(tan1[a], dif, dif);
+    vec3.normalize(dif);
 
-      sdir[0] = (t2 * x1 - t1 * x2) * r; sdir[1] = (t2 * y1 - t1 * y2) * r; sdir[2] = (t2 * z1 - t1 * z2) * r;
-      tdir[0] = (s1 * x2 - s2 * x1) * r; tdir[1] = (s1 * y2 - s2 * y1) * r; tdir[2] = (s1 * z2 - s2 * z1) * r;
-      if (isNaN(sdir[0]) || isNaN(sdir[1]) || isNaN(sdir[2]) ||
-          isNaN(tdir[0]) || isNaN(tdir[1]) || isNaN(tdir[2]) )
-      {
-        sdir[0] = sdir[1] = sdir[2] = tdir[0] = tdir[1] = tdir[2] = 0;
+    tangents[a*4] = dif[0];
+    tangents[a*4+1] = dif[1];
+    tangents[a*4+2] = dif[2];
+    tangents[a*4+3] = (vec3.dot(vec3.cross(normal, tan1[a]), tan2[a])) < 0.0 ? -1.0 : 1.0;
+  }
+
+  if (tangentBuffer)
+    self.buffers.tangent_buffer.refresh();
+  else
+    self.buffers.tangent_buffer = new Jax.NormalBuffer(tangents);
+  return self.buffers.tangent_buffer;
+}
+
+function setColorCoords(self, count, color, coords) {
+  var i, j;
+  var num_colors = color.length;
+  if (num_colors > 4) throw new Error("Color should have at most 4 components");
+  for (i = 0; i < count*4; i += 4)
+  {
+    for (j = 0; j < num_colors; j++)
+      coords[i+j] = color[j];
+    for (j = num_colors; j < 4; j++) {
+      coords[i+j] = 1;
+    }
+  }
+}
+
+function findMaterial(name_or_instance) {
+  if (typeof(name_or_instance) == "string")
+    return Jax.Material.find(name_or_instance);
+  else if (name_or_instance.isKindOf && name_or_instance.isKindOf(Jax.Material))
+    return name_or_instance;
+
+  throw new Error("Material must be an instance of Jax.Material, or "+
+                  "a string representing a material in the Jax material registry");
+}
+
+function eachTriangle(mesh, callback) {
+  var vertcount, a;
+
+  var indices = mesh.getIndexBuffer(), vertices = mesh.vertices;
+  if (vertices.length == 0) return;
+
+  if (indices) {
+    if (indices.length == 0) return;
+    indices = indices.getTypedArray();
+    vertcount = indices.length;
+  } else
+    vertcount = vertices.length;
+
+  function call(i1, i2, i3) {
+    var v1, v2, v3, i = false;
+
+    if (indices) {
+      i = true;
+      v1 = vertices[indices[i1]];
+      v2 = vertices[indices[i2]];
+      v3 = vertices[indices[i3]];
+    } else {
+      i = false;
+      v1 = vertices[i1];
+      v2 = vertices[i2];
+      v3 = vertices[i3];
+    }
+
+    if (!v1 || !v2 || !v3) return;
+    callback(v1.array, v2.array, v3.array);
+  }
+
+  switch(mesh.draw_mode) {
+    case GL_TRIANGLE_STRIP:
+      for (a = 2; a < vertcount; a += 2) {
+        call(a-2, a-1, a);
+        call(a, a-1, a+1);
       }
-      sett1(a1); sett1(a2); sett1(a3);
-      sett2(a1); sett2(a2); sett2(a3);
-    }
+      break;
+    case GL_TRIANGLES:
+      for (a = 0; a < vertcount; a += 3)
+        call(a, a+1, a+2);
+      break;
+    case GL_TRIANGLE_FAN:
+      for (a = 2; a < vertcount; a++)
+        call(0, a-1, a);
+      break;
+    default:
+      return;
+  }
+}
 
-    vertcount = indices ? indices.length : normals.length / 3;
-    /* we need to pass the vertices into findTangentVector differently depending on draw mode */
-    switch(self.draw_mode) {
-      case GL_TRIANGLE_STRIP:
-        for (a = 2; a < vertcount; a += 2) {
-          findTangentVector(a-2, a-1, a);
-          findTangentVector(a, a-1, a+1);
-        }
-        break;
-      case GL_TRIANGLES:
-        for (a = 0; a < vertcount; a += 3)
-          findTangentVector(a, a+1, a+2);
-        break;
-      case GL_TRIANGLE_FAN:
-        for (a = 2; a < vertcount; a++)
-          findTangentVector(0, a-1, a);
-        break;
-      default:
-        throw new Error("Cannot calculate tangent space for draw mode: "+Jax.Util.enumName(self.draw_mode));
-    }
+function buildTriangles(mesh) {
+  mesh.triangles.clear();
 
-    var normal = vec3.create();
+  eachTriangle(mesh, function(v1, v2, v3) {
+    var tri = new Jax.Geometry.Triangle();
+    tri.assign(v1, v2, v3);
+    mesh.triangles.push(tri);
+  });
+}
 
-    while (tangents.length > vertcount) tangents.pop();
-
-    var b;
-    for (b = 0; b < vertcount; b++) {
-
-      if (indices) a = indices[b];
-      else a = b;
-
-      normal[0] = normals[a*3]; normal[1] = normals[a*3+1]; normal[2] = normals[a*3+2];
-      vec3.scale(normal, vec3.dot(normal, tan1[a]), dif);
-      vec3.subtract(tan1[a], dif, dif);
-      vec3.normalize(dif);
-
-      tangents[a*4] = dif[0];
-      tangents[a*4+1] = dif[1];
-      tangents[a*4+2] = dif[2];
-      tangents[a*4+3] = (vec3.dot(vec3.cross(normal, tan1[a]), tan2[a])) < 0.0 ? -1.0 : 1.0;
-    }
-
-    if (tangentBuffer)
-      self.buffers.tangent_buffer.refresh();
-    else
-      self.buffers.tangent_buffer = new Jax.NormalBuffer(tangents);
-    return self.buffers.tangent_buffer;
+function calculateBounds(self, vertices) {
+  if (vertices.length == 0) {
+    self.bounds.left = self.bounds.right = 0;
+    self.bounds.top = self.bounds.bottom = 0;
+    self.bounds.front = self.bounds.back = 0;
+    self.bounds.width = self.bounds.height = self.bounds.depth = 0;
+  } else {
+    self.bounds.left = self.bounds.right = null;
+    self.bounds.top = self.bounds.bottom = null;
+    self.bounds.front = self.bounds.back = null;
+    self.bounds.width = self.bounds.height = self.bounds.depth = null;
   }
 
-  function findMaterial(name_or_instance) {
-    if (typeof(name_or_instance) == "string")
-      return Jax.Material.find(name_or_instance);
-    else if (name_or_instance.isKindOf && name_or_instance.isKindOf(Jax.Material))
-      return name_or_instance;
+  var i, v;
 
-    throw new Error("Material must be an instance of Jax.Material, or "+
-                    "a string representing a material in the Jax material registry");
+  for (i = 0; i < vertices.length; i++)
+  {
+    v = vertices[i];
+    if (self.bounds.left  == null || v < self.bounds.left)   self.bounds.left   = v;
+    if (self.bounds.right == null || v > self.bounds.right)  self.bounds.right  = v;
+
+    v = vertices[++i];
+    if (self.bounds.bottom== null || v < self.bounds.bottom) self.bounds.bottom = v;
+    if (self.bounds.top   == null || v > self.bounds.top)    self.bounds.top    = v;
+
+    v = vertices[++i];
+    if (self.bounds.front == null || v > self.bounds.front)  self.bounds.front  = v;
+    if (self.bounds.back  == null || v < self.bounds.back)   self.bounds.back   = v;
   }
 
-  function calculateBounds(self, vertices) {
-    self.bounds = {left:null,right:null,top:null,bottom:null,front:null,back:null,width:null,height:null,depth:null};
-    var i, v;
+  self.bounds.width = self.bounds.right - self.bounds.left;
+  self.bounds.height= self.bounds.top   - self.bounds.bottom;
+  self.bounds.depth = self.bounds.front - self.bounds.back;
+}
 
-    for (i = 0; i < vertices.length; i++)
-    {
-      v = vertices[i];
-      if (self.bounds.left  == null || v < self.bounds.left)   self.bounds.left   = v;
-      if (self.bounds.right == null || v > self.bounds.right)  self.bounds.right  = v;
+function calculateNormals(mesh) {
+  var triangles = mesh.getTriangles();
+  var normals = {}, i;
 
-      v = vertices[++i];
-      if (self.bounds.bottom== null || v < self.bounds.bottom) self.bounds.bottom = v;
-      if (self.bounds.top   == null || v > self.bounds.top)    self.bounds.top    = v;
+  for (i = 0; i < triangles.length; i++) {
+    var tri = triangles[i];
+    normals[tri.a] = normals[tri.a] || [];
+    normals[tri.b] = normals[tri.b] || [];
+    normals[tri.c] = normals[tri.c] || [];
+    normals[tri.a].push(tri.getNormal());
+    normals[tri.b].push(tri.getNormal());
+    normals[tri.c].push(tri.getNormal());
+  }
 
-      v = vertices[++i];
-      if (self.bounds.front == null || v < self.bounds.front)  self.bounds.front  = v;
-      if (self.bounds.back  == null || v > self.bounds.back)   self.bounds.back   = v;
+  var normal = vec3.create();
+  mesh.dataRegion.remap(mesh.normalData, triangles.length * 9);
+  for (i = 0; i < mesh.vertices.length; i++) {
+    var v = mesh.vertices[i].array;
+    if (normals[v]) {
+      normal[0] = normal[1] = normal[2] = 0;
+      for (var j = 0; j < normals[v].length; j++)
+        vec3.add(normal, normals[v][j], normal);
+      vec3.scale(normal, 1/normals[v].length);
+
+      vec3.set(normal, mesh.normals[i].array);
     }
-
-    self.bounds.width = self.bounds.right - self.bounds.left;
-    self.bounds.height= self.bounds.top   - self.bounds.bottom;
-    self.bounds.depth = self.bounds.front - self.bounds.back;
   }
 
-  function ensureBuilt(self) {
-    if (!self.isValid()) self.rebuild();
-  }
+  mesh.buffers.normal_buffer.refresh();
+}
+
+  var BUFFERS = {
+    vertices:['vertexData',3],
+    normals:['normalData',3],
+    colors:['colorData',4],
+    textureCoords:['textureCoordsData',2]
+  };
 
   return Jax.Class.create({
     initialize: function(options) {
       this.buffers = {};
+
+      this.bounds = {
+        left: 0, right: 0, front: 0, back: 0, top: 0, bottom: 0,
+        width: 0, height: 0, depth: 0
+      };
+
+      this.triangles = [];
+
+      var self = this;
+      for (var i in BUFFERS) {
+        Object.defineProperty(self, i, (function() {
+          var j = "_"+i, k = BUFFERS[i];
+          return {
+            configurable: true,
+            enumerable: true,
+            get: function() {
+              if (!self[j])                                   // if (!self._vertices)
+                self[j] = self.validate()[k[0]].group(k[1]);  //   self._vertices = self.validate().vertexData.group(3);
+              return self[j];                                 // return self._vertices;
+            },
+          };
+        })());
+      }
 
 
       this.default_material = "default";
@@ -4827,56 +5354,38 @@ Jax.Mesh = (function() {
         this.draw_mode = GL_TRIANGLES;
     },
 
+    getBounds: function() { return this.bounds; },
+
+    getTriangles: function() {
+      this.validate();
+      if (this.triangles.length == 0 && this.vertices.length != 0) buildTriangles(this);
+      return this.triangles;
+    },
+
     setColor: function(red, green, blue, alpha) {
-      var buf = this.getColorBuffer();
-      for (var i = 0; i < buf.js.length; i += 4) {
-        buf.js[i] = red;
-        buf.js[i+1] = green;
-        buf.js[i+2] = blue;
-        buf.js[i+3] = alpha;
+      var colorBuffer = this.getColorBuffer();
+
+      for (var i = 0; i < this.colors.length; i++) {
+        if (arguments.length == 4) {
+          this.colors[i].array[0] = red;
+          this.colors[i].array[1] = green;
+          this.colors[i].array[2] = blue;
+          this.colors[i].array[3] = alpha;
+        } else {
+          for (var j = 0; j < 4; j++) {
+            this.colors[i].array[j] = arguments[0][j];
+          }
+        }
       }
-      buf.refresh();
+
+      colorBuffer.refresh();
       return this;
     },
 
     dispose: function() {
-      while (this.faces && this.faces.length) this.faces.pop();
-      while (this.edges && this.edges.length) this.edges.pop();
-      for (var i in this.buffers) {
+      for (var i in this.buffers)
         this.buffers[i].dispose();
-        delete this.buffers[i];
-      }
       this.built = false;
-    },
-
-    getFaceVertices: function(face) {
-      return [
-                [this.getVertexBuffer().js[face.vertexIndices[0]*3+0],
-                 this.getVertexBuffer().js[face.vertexIndices[0]*3+1],
-                 this.getVertexBuffer().js[face.vertexIndices[0]*3+2]
-                ],
-                [this.getVertexBuffer().js[face.vertexIndices[1]*3+0],
-                 this.getVertexBuffer().js[face.vertexIndices[1]*3+1],
-                 this.getVertexBuffer().js[face.vertexIndices[1]*3+2]
-                ],
-                [this.getVertexBuffer().js[face.vertexIndices[2]*3+0],
-                 this.getVertexBuffer().js[face.vertexIndices[2]*3+1],
-                 this.getVertexBuffer().js[face.vertexIndices[2]*3+2]
-                ]
-             ];
-    },
-
-    getEdgeVertices: function(edge) {
-      return [
-                [this.getVertexBuffer().js[edge.vertexIndices[0]*3+0],
-                 this.getVertexBuffer().js[edge.vertexIndices[0]*3+1],
-                 this.getVertexBuffer().js[edge.vertexIndices[0]*3+2]
-                ],
-                [this.getVertexBuffer().js[edge.vertexIndices[1]*3+0],
-                 this.getVertexBuffer().js[edge.vertexIndices[1]*3+1],
-                 this.getVertexBuffer().js[edge.vertexIndices[1]*3+2]
-                ]
-             ];
     },
 
     render: function(context, options) {
@@ -4899,47 +5408,110 @@ Jax.Mesh = (function() {
       return result;
     },
 
-    getVertexBuffer: function() { ensureBuilt(this); return this.buffers.vertex_buffer; },
-    getColorBuffer:  function() { ensureBuilt(this); return this.buffers.color_buffer;  },
-    getIndexBuffer:  function() { ensureBuilt(this); return this.buffers.index_buffer;  },
-    getNormalBuffer: function() { ensureBuilt(this); return this.buffers.normal_buffer; },
-    getTextureCoordsBuffer: function() { ensureBuilt(this); return this.buffers.texture_coords; },
+    getVertexBuffer: function() {
+      this.validate();
+      if (this.buffers.vertex_buffer.length == 0) return null;
+      return this.buffers.vertex_buffer;
+    },
+
+    getColorBuffer:  function() {
+      this.validate();
+      if (this.buffers.color_buffer.length == 0) return null;
+      return this.buffers.color_buffer;
+    },
+
+    getIndexBuffer:  function() {
+      this.validate();
+      if (this.buffers.index_buffer.length == 0) return null;
+      return this.buffers.index_buffer;
+    },
+
+    getNormalBuffer: function() {
+      this.validate();
+      if (this.buffers.normal_buffer.length == 0 && this.buffers.vertex_buffer.length > 0)
+        this.recalculateNormals();
+      if (this.buffers.normal_buffer.length == 0) return null;
+      return this.buffers.normal_buffer;
+    },
+
+    getTextureCoordsBuffer: function() {
+      this.validate();
+      if (this.buffers.texture_coords.length == 0) return null;
+      return this.buffers.texture_coords;
+    },
+
     getTangentBuffer: function() {
-      if (this.buffers.tangent_buffer) return this.buffers.tangent_buffer;
-      return makeTangentBuffer(this);
+      if (!this.buffers.tangent_buffer) return this.rebuildTangentBuffer();
+      if (this.buffers.tangent_buffer.length == 0) return null;
+      return this.buffers.tangent_buffer;
     },
 
     rebuildTangentBuffer: function() {
       return makeTangentBuffer(this);
     },
 
+    validate: function() {
+      if (!this.isValid()) this.rebuild();
+      return this;
+    },
+
     isValid: function() { return !!this.built; },
+
+    recalculateNormals: function() {
+      calculateNormals(this);
+    },
 
     rebuild: function() {
       this.dispose();
+
+      while (this.triangles.length > 0)
+        this.triangles.pop();
 
       var vertices = [], colors = [], textureCoords = [], normals = [], indices = [];
       if (this.init)
         this.init(vertices, colors, textureCoords, normals, indices);
 
-      if (this.color)
-        setColorCoords(this, vertices.length / 3, this.color, colors);
+      this.built = true;
 
-      if (colors.length == 0) // still no colors?? default to white
-        setColorCoords(this, vertices.length / 3, [1,1,1,1], colors);
-
-      if (vertices.length > 0)
-      {
-        this.buffers.vertex_buffer = new Jax.VertexBuffer(vertices);
-        calculateBounds(this, vertices);
+      if (colors.length == 0 || this.color) {
+        if (!this.color) this.color = [1,1,1,1];
+        for (var i = 0; i < vertices.length / 3; i++) {
+          for (var j = 0; j < 4; j++)
+            colors[i*4+j] = this.color[j];
+        }
       }
 
-      if (colors.length > 0) this.buffers.color_buffer = new Jax.ColorBuffer(colors);
-      if (indices.length> 0) this.buffers.index_buffer = new Jax.ElementArrayBuffer(indices);
-      if (normals.length> 0) this.buffers.normal_buffer= new Jax.NormalBuffer(normals);
-      if (textureCoords.length > 0) this.buffers.texture_coords = new Jax.TextureCoordsBuffer(textureCoords);
+      if (this.dataRegion) {
+        this.dataRegion.remap(this.vertexData,        vertices);
+        this.dataRegion.remap(this.colorData,         colors);
+        this.dataRegion.remap(this.textureCoordsData, textureCoords);
+        this.dataRegion.remap(this.normalData,        normals);
+        this.dataRegion.remap(this.indices,           indices);
+      } else {
+        this.dataRegion = new Jax.DataRegion(
+          (vertices.length+colors.length+textureCoords.length+normals.length) * Float32Array.BYTES_PER_ELEMENT +
+          indices.length * Uint16Array.BYTES_PER_ELEMENT
+        );
 
-      this.built = true;
+        this.vertexData        = this.dataRegion.map(Float32Array, vertices);
+        this.colorData         = this.dataRegion.map(Float32Array, colors);
+        this.textureCoordsData = this.dataRegion.map(Float32Array, textureCoords);
+        this.normalData        = this.dataRegion.map(Float32Array, normals);
+        this.indices           = this.dataRegion.map(Uint16Array,  indices);
+      }
+
+      this._vertices = null;
+      this._colors = null;
+      this._textureCoords = null;
+      this._normals = null;
+
+      calculateBounds(this, vertices);
+
+      this.buffers.vertex_buffer  = new Jax.DataBuffer(GL_ARRAY_BUFFER, this.vertexData, 3);
+      this.buffers.color_buffer   = new Jax.DataBuffer(GL_ARRAY_BUFFER, this.colorData, 4);
+      this.buffers.normal_buffer  = new Jax.DataBuffer(GL_ARRAY_BUFFER, this.normalData, 3);
+      this.buffers.texture_coords = new Jax.DataBuffer(GL_ARRAY_BUFFER, this.textureCoordsData, 2);
+      this.buffers.index_buffer   = new Jax.DataBuffer(GL_ELEMENT_ARRAY_BUFFER, this.indices);
 
       if (this.after_initialize) this.after_initialize();
     }
@@ -4950,22 +5522,31 @@ Jax.Events = (function() {
     Methods: {
       getEventListeners: function(name) {
         this.event_listeners = this.event_listeners || {};
-        return this.event_listeners[name] = this.event_listeners[name] || [];
+        return this.event_listeners[name] = this.event_listeners[name] || {length:0};
       },
 
       addEventListener: function(name, callback) {
-        this.getEventListeners(name).push(callback);
-        return this.getEventListeners(name).length - 1;
+        var ary = this.getEventListeners(name);
+        var index = ary.length++;
+        ary[index] = callback;
+        return index;
       },
 
       removeEventListener: function(name, index) {
-        this.getEventListeners(name).splice(index, 1);
+        if (!name || index == undefined) throw new Error("both event type and listener index are required");
+        var ary = this.getEventListeners(name);
+        var func = ary[index];
+        if (ary[index]) delete ary[index];
+        return func;
       },
 
       fireEvent: function(name, event_object) {
         var listeners = this.getEventListeners(name);
-        for (var i = 0; i < listeners.length; i++)
-          listeners[i].call(this, event_object);
+        if (event_object && event_object.type == undefined)
+          event_object.type = name;
+        for (var i in listeners)
+          if (i == 'length') continue;
+          else listeners[i].call(this, event_object);
       }
     }
   };
@@ -4988,21 +5569,40 @@ Jax.Geometry.Plane = (function() {
 
   return Jax.Class.create({
     initialize: function(points) {
-      if (points) this.set.apply(this, arguments);
+      this.normal = vec3.create([0,1,0]);
+
+      this.d = 0.0;
+
+      if (arguments.length)
+        this.set.apply(this, arguments);
     },
 
-    set: function(points) {
-      if (arguments.length == 3) points = [arguments[0], arguments[1], arguments[2]];
+    classify: function(O) {
+      return vec3.dot(this.normal, O) + this.d;
+    },
 
-      this.normal = vec3.create();
-      var vec = vec3.create();
-      vec3.subtract(points[1], points[0], this.normal);
-      vec3.subtract(points[2], points[0], vec);
-      vec3.cross(this.normal, vec, this.normal);
-      vec3.normalize(this.normal);
+    set: function() {
+      var points = arguments;
+      if (arguments.length != 3) points = arguments[0];
+      if (typeof(points[0]) == 'object' && points[0].array) {
+        var vec = vec3.create();
+        vec3.subtract(points[1].array, points[0].array, this.normal);
+        vec3.subtract(points[2].array, points[0].array, vec);
+        vec3.cross(this.normal, vec, this.normal);
+        vec3.normalize(this.normal);
 
-      this.point = points[1];
-      this.d = -innerProduct(this.normal, this.point[0], this.point[1], this.point[2]);
+        this.point = points[1].array;
+        this.d = -innerProduct(this.normal, this.point[0], this.point[1], this.point[2]);
+      } else {
+        var vec = vec3.create();
+        vec3.subtract(points[1], points[0], this.normal);
+        vec3.subtract(points[2], points[0], vec);
+        vec3.cross(this.normal, vec, this.normal);
+        vec3.normalize(this.normal);
+
+        this.point = points[1];
+        this.d = -innerProduct(this.normal, this.point[0], this.point[1], this.point[2]);
+      }
 
       return this;
     },
@@ -5020,13 +5620,18 @@ Jax.Geometry.Plane = (function() {
     {
       var x, y, z;
       if (arguments.length == 3) { x = arguments[0]; y = arguments[1]; z = arguments[2]; }
+      else if (point.array) { x = point.array[0]; y = point.array[1]; z = point.array[2]; }
       else { x = point[0]; y = point[1]; z = point[2]; }
       return this.d + innerProduct(this.normal, x, y, z);
     },
 
-    whereis: function(point)
+    whereis: function()
     {
-      if (arguments.length == 3) point = [arguments[0], arguments[1], arguments[2]];
+      var point;
+      if (arguments.length == 3) point = arguments;
+      else if (arguments[0].array) point = arguments[0].array;
+      else point = arguments[0];
+
       var d = this.distance(point);
       if (d > 0) return Jax.Geometry.Plane.FRONT;
       if (d < 0) return Jax.Geometry.Plane.BACK;
@@ -5038,6 +5643,423 @@ Jax.Geometry.Plane = (function() {
 Jax.Geometry.Plane.FRONT     = 1;
 Jax.Geometry.Plane.BACK      = 2;
 Jax.Geometry.Plane.INTERSECT = 3;
+Jax.Geometry.Triangle = (function() {
+function SORT(isect) {
+  if(isect[0] > isect[1])
+  {
+    var c = isect[0];
+    isect[0] = isect[1];
+    isect[1] = c;
+  }
+}
+
+function ISECT(VV0, VV1, VV2, D0, D1, D2, isect) {
+  isect[0] = VV0 + (VV1 - VV0) * D0 / (D0 - D1);
+  isect[1] = VV0 + (VV2 - VV0) * D0 / (D0 - D2);
+}
+
+function COMPUTE_INTERVALS(VV0,VV1,VV2,D0,D1,D2,D0D1,D0D2,isect) {
+  if(D0D1 > 0)
+  {
+    /* here we know that D0D2<=0.0 */
+    /* that is D0, D1 are on the same side, D2 on the other or on the plane */
+    ISECT(VV2,VV0,VV1,D2,D0,D1,isect);
+  }
+  else if(D0D2 > 0)
+  {
+    /* here we know that d0d1<=0.0 */
+    ISECT(VV1,VV0,VV2,D1,D0,D2,isect);
+  }
+  else if(D1 * D2 > 0 || D0 != 0)
+  {
+    /* here we know that d0d1<=0.0 or that D0!=0.0 */
+    ISECT(VV0,VV1,VV2,D0,D1,D2,isect);
+  }
+  else if(D1 != 0)
+  {
+    ISECT(VV1,VV0,VV2,D1,D0,D2,isect);
+  }
+  else if(D2 != 0)
+  {
+    ISECT(VV2,VV0,VV1,D2,D0,D1,isect);
+  }
+  else
+  {
+    /* triangles are coplanar */
+    throw 1;
+  }
+}
+
+/* this edge to edge test is based on Franlin Antonio's gem:
+   "Faster Line Segment Intersection", in Graphics Gems III,
+   pp. 199-202 */
+function EDGE_EDGE_TEST(Ax, Ay, V0,U0,U1, i0, i1) {
+  var Bx,By,Cx,Cy,e,d,f;
+
+  Bx=U0[i0]-U1[i0];
+  By=U0[i1]-U1[i1];
+  Cx=V0[i0]-U0[i0];
+  Cy=V0[i1]-U0[i1];
+  f=Ay*Bx-Ax*By;
+  d=By*Cx-Bx*Cy;
+  if((f>0 && d>=0 && d<=f) || (f<0 && d<=0 && d>=f))
+  {
+    e=Ax*Cy-Ay*Cx;
+    if(f>0)
+    {
+      if(e>=0 && e<=f) return true;
+    }
+    else
+    {
+      if(e<=0 && e>=f) return true;
+    }
+  }
+  return false;
+}
+
+function EDGE_AGAINST_TRI_EDGES(V0,V1,U0,U1,U2,  i0, i1)
+{
+  var Ax,Ay;
+  Ax=V1[i0]-V0[i0];
+  Ay=V1[i1]-V0[i1];
+
+  /* test edge U0,U1 against V0,V1 */
+  return EDGE_EDGE_TEST(Ax,Ay, V0,U0,U1, i0,i1) ||
+  /* test edge U1,U2 against V0,V1 */
+         EDGE_EDGE_TEST(Ax,Ay, V0,U1,U2, i0,i1) ||
+  /* test edge U2,U1 against V0,V1 */
+         EDGE_EDGE_TEST(Ax,Ay, V0,U2,U0, i0,i1);
+}
+
+function POINT_IN_TRI(V0,U0,U1,U2, i0,i1)
+{
+  var a,b,c,d0,d1,d2;
+  /* is T1 completly inside T2? */
+  /* check if V0 is inside tri(U0,U1,U2) */
+  a  = U1[i1]-U0[i1];
+  b  = -(U1[i0]-U0[i0]);
+  c  = -a*U0[i0]-b*U0[i1];
+  d0 = a*V0[i0]+b*V0[i1]+c;
+
+  a  = U2[i1]-U1[i1];
+  b  = -(U2[i0]-U1[i0]);
+  c  = -a*U1[i0]-b*U1[i1];
+  d1 = a*V0[i0]+b*V0[i1]+c;
+
+  a  =      U0[i1] -     U2[i1];
+  b  = -   (U0[i0] -     U2[i0]);
+  c  = -a * U2[i0] - b * U2[i1];
+  d2 =  a * V0[i0] + b * V0[i1] + c;
+
+  if(d0 * d1 > 0.0)
+  {
+    if(d0 * d2 > 0.0) return true;
+  }
+  return false;
+}
+
+function coplanar_tri_tri(N, V0, V1, V2, U0, U1, U2) {
+  var A = this.A = this.A || vec3.create();
+  var i0, i1;
+
+  /* first project onto an axis-aligned plane, that maximizes the area */
+  /* of the triangles, compute indices: i0,i1. */
+  A[0] = Math.abs(N[0]);
+  A[1] = Math.abs(N[1]);
+  A[2] = Math.abs(N[2]);
+
+  if(A[0]>A[1])
+  {
+    if(A[0]>A[2])
+    {
+      i0=1;      /* A[0] is greatest */
+      i1=2;
+    }
+    else
+    {
+      i0=0;      /* A[2] is greatest */
+      i1=1;
+    }
+  }
+  else   /* A[0]<=A[1] */
+  {
+    if(A[2]>A[1])
+    {
+      i0=0;      /* A[2] is greatest */
+      i1=1;
+    }
+    else
+    {
+      i0=0;      /* A[1] is greatest */
+      i1=2;
+    }
+  }
+
+  /* test all edges of triangle 1 against the edges of triangle 2 */
+  if (EDGE_AGAINST_TRI_EDGES(V0,V1,U0,U1,U2,i0,i1) ||
+      EDGE_AGAINST_TRI_EDGES(V1,V2,U0,U1,U2,i0,i1) ||
+      EDGE_AGAINST_TRI_EDGES(V2,V0,U0,U1,U2,i0,i1)) return true;
+
+  /* finally, test if tri1 is totally contained in tri2 or vice versa */
+  if (POINT_IN_TRI(V0,U0,U1,U2, i0,i1) ||
+      POINT_IN_TRI(U0,V0,V1,V2, i0,i1)) return true;
+
+  return false;
+}
+
+function tri_tri_intersect(V0, V1, V2, U0, U1, U2)
+{
+  var E1 = this.E1 = this.E1 || vec3.create(),
+      E2 = this.E2 = this.E2 || vec3.create(),
+      N1 = this.N1 = this.N1 || vec3.create(),
+      N2 = this.N2 = this.N2 || vec3.create(),
+      D  = this.D  = this.D  || vec3.create(),
+      isect1 = this.isect1 = this.isect1 || vec2.create(),
+      isect2 = this.isect2 = this.isect2 || vec2.create();
+  var d1, d2;
+  var du0,du1,du2,dv0,dv1,dv2;
+  var du0du1,du0du2,dv0dv1,dv0dv2;
+  var index;
+  var vp0,vp1,vp2;
+  var up0,up1,up2;
+  var b,c,max;
+
+  /* compute plane equation of triangle(V0,V1,V2) */
+  vec3.subtract(V1, V0, E1);
+  vec3.subtract(V2, V0, E2);
+  vec3.cross(E1, E2, N1);
+  d1 = -vec3.dot(N1, V0);
+  /* plane equation 1: N1.X+d1=0 */
+
+  /* put U0,U1,U2 into plane equation 1 to compute signed distances to the plane*/
+  du0 = vec3.dot(N1, U0) + d1;
+  du1 = vec3.dot(N1, U1) + d1;
+  du2 = vec3.dot(N1, U2) + d1;
+
+  /* coplanarity robustness check */
+  if(Math.abs(du0) < Math.EPSILON) du0 = 0.0;
+  if(Math.abs(du1) < Math.EPSILON) du1 = 0.0;
+  if(Math.abs(du2) < Math.EPSILON) du2 = 0.0;
+
+  du0du1 = du0 * du1;
+  du0du2 = du0 * du2;
+
+  if(du0du1 > 0 && du0du2 > 0) /* same sign on all of them + not equal 0 ? */
+    return false;              /* no intersection occurs */
+
+  /* compute plane of triangle (U0,U1,U2) */
+  vec3.subtract(U1, U0, E1);
+  vec3.subtract(U2, U0, E2);
+  vec3.cross(E1, E2, N2);
+  d2 = -vec3.dot(N2, U0);
+  /* plane equation 2: N2.X+d2=0 */
+
+  /* put V0,V1,V2 into plane equation 2 */
+  dv0 = vec3.dot(N2, V0) + d2;
+  dv1 = vec3.dot(N2, V1) + d2;
+  dv2 = vec3.dot(N2, V2) + d2;
+
+  if (Math.abs(dv0) < Math.EPSILON) dv0 = 0;
+  if (Math.abs(dv1) < Math.EPSILON) dv1 = 0;
+  if (Math.abs(dv2) < Math.EPSILON) dv2 = 0;
+
+  dv0dv1 = dv0 * dv1;
+  dv0dv2 = dv0 * dv2;
+
+  if(dv0dv1 > 0 && dv0dv2 > 0) /* same sign on all of them + not equal 0 ? */
+    return false;              /* no intersection occurs */
+
+  /* compute direction of intersection line */
+  vec3.cross(N1, N2, D);
+
+  /* compute and index to the largest component of D */
+  max = Math.abs(D[0]);
+  index = 0;
+  b = Math.abs(D[1]);
+  c = Math.abs(D[2]);
+
+  if (b > max) { max = b; index = 1; }
+  if (c > max) { max = c; index = 2; }
+
+  /* this is the simplified projection onto L*/
+  vp0 = V0[index];
+  vp1 = V1[index];
+  vp2 = V2[index];
+
+  up0 = U0[index];
+  up1 = U1[index];
+  up2 = U2[index];
+
+  try {
+    /* compute interval for triangle 1 */
+    COMPUTE_INTERVALS(vp0,vp1,vp2,dv0,dv1,dv2,dv0dv1,dv0dv2,isect1);
+
+    /* compute interval for triangle 2 */
+    COMPUTE_INTERVALS(up0,up1,up2,du0,du1,du2,du0du1,du0du2,isect2);
+  } catch(e) {
+    if (e == 1) return coplanar_tri_tri(N1, V0, V1, V2, U0, U1, U2);
+    throw e;
+  }
+
+  SORT(isect1);
+  SORT(isect2);
+
+  if(isect1[1] < isect2[0] || isect2[1] < isect1[0]) return false;
+  return true;
+}
+
+  var bufs = {};
+
+  return Jax.Class.create({
+    initialize: function(a, b, c) {
+      this.a = vec3.create();
+      this.b = vec3.create();
+      this.c = vec3.create();
+      this.center = vec3.create();
+      this.normal = vec3.create();
+
+      if (arguments.length > 0)
+        this.set.apply(this, arguments);
+
+    },
+
+    set: function(a, b, c) {
+      return this.assign(vec3.create(a), vec3.create(b), vec3.create(c));
+    },
+
+    assign: function(a, b, c) {
+      this.a = a;
+      this.b = b;
+      this.c = c;
+
+      vec3.add(a, b, this.center);
+      vec3.add(c, this.center, this.center);
+      vec3.scale(this.center, 1/3);
+
+      var tmp = bufs.tmp = bufs.tmp || vec3.create();
+      vec3.subtract(b, a, this.normal);
+      vec3.subtract(c, a, tmp);
+      vec3.cross(this.normal, tmp, this.normal);
+      vec3.normalize(this.normal);
+
+      this.updateDescription();
+      return this;
+    },
+
+    getNormal: function() {
+      return this.normal;
+    },
+
+    toString: function() {
+      return "Triangle: "+this.a+"; "+this.b+"; "+this.c;
+    },
+
+    intersectRay: function(O, D, cp, segmax) {
+      var p = this._p = this._p || new Jax.Geometry.Plane();
+      p.set(this.a, this.b, this.c);
+      var denom = vec3.dot(p.normal, D);
+      if (Math.abs(denom) < Math.EPSILON) return false;
+      var t = -(p.d + vec3.dot(p.normal, O)) / denom;
+      if (t <= 0) return false;
+      if (segmax != undefined && t > segmax) return false;
+
+      vec3.set(D, cp);
+      vec3.scale(cp, t, cp);
+      vec3.add(O, cp, cp);
+
+      if (this.pointInTri(cp)) {
+        cp[3] = t;
+        return true;
+      }
+      return false;
+    },
+
+    intersectSphere: function(O, radius, cp) {
+      var p = this._p = this._p || new Jax.Geometry.Plane();
+      p.set(this.a, this.b, this.c);
+      var dist = p.classify(O);
+      if (Math.abs(dist) > radius) return false;
+
+      var point = this._point = this._point || vec3.create();
+      vec3.scale(p.normal, dist, point);
+      vec3.subtract(O, point, point);
+      if (this.pointInTri(point)) {
+        if (cp) vec3.set(point, cp);
+        return true;
+      }
+
+      var v = bufs.v = bufs.v || [];
+      var u = bufs.u = bufs.u || vec3.create();
+      var pa = bufs.pa = bufs.pa || vec3.create();
+      var tmp = bufs.tmp = bufs.tmp || vec3.create();
+      var radsquared = radius*radius;
+
+      v[0] = this.a; v[1] = this.b; v[2] = this.c; v[3] = this.a;
+      for (var i = 0; i < 3; i++) {
+        vec3.subtract(v[i+1], v[i], u);
+        vec3.subtract(O, v[i], pa);
+        var s = vec3.dot(u, pa) / vec3.dot(u, u);
+
+        if (s < 0) vec3.set(v[i], tmp);
+        else if (s > 1) vec3.set(v[i+1], tmp);
+        else { vec3.scale(u, s, tmp); vec3.add(v[i], tmp, tmp); }
+        if (cp) vec3.set(tmp, cp);
+
+        vec3.subtract(O, tmp, tmp);
+        var sq_dist = vec3.dot(tmp, tmp);
+        if (sq_dist <= radsquared) return true;
+      }
+
+      return false;
+    },
+
+    intersectTriangle: function(t) {
+      return tri_tri_intersect(this.a, this.b, this.c, t.a, t.b, t.c);
+    },
+
+    updateDescription: function() {
+      var p = this._p = this._p || new Jax.Geometry.Plane(this.a, this.b, this.c);
+      var n = p.normal;
+      var a = [Math.abs(n.x), Math.abs(n.y), Math.abs(n.z)];
+
+      if (a[0] > a[1])
+      {
+        if (a[0] > a[2]) { this._i1=1; this._i2=2; }
+        else             { this._i1=0; this._i2=1; }
+      }
+      else
+      {
+        if (a[1] > a[2]) { this._i1=0; this._i2=2; }
+        else             { this._i1=0; this._i2=1; }
+      }
+
+      return this;
+    },
+
+    pointInTri: function(P) {
+      var u = this._u = this._u || vec3.create();
+      var v = this._v = this._v || vec3.create();
+      u[0] = P[this._i1] - this.a[this._i1];
+      u[1] = this.b[this._i1] - this.a[this._i1];
+      u[2] = this.c[this._i1] - this.a[this._i1];
+      v[0] = P[this._i2] - this.a[this._i2];
+      v[1] = this.b[this._i2] - this.a[this._i2];
+      v[2] = this.c[this._i2] - this.a[this._i2];
+
+      var a, b;
+      if (u[1] == 0) {
+        b = u[0] / u[2];
+        if (b >= 0 && b <= 1) a = (v[0] - b * v[2]) / v[1];
+        else return false;
+      } else {
+        b = (v[0] * u[1] - u[0] * v[1]) / (v[2] * u[1] - u[2] * v[1]);
+        if (b >= 0 && b <= 1) a = (u[0] - b * u[2]) / u[1];
+        else return false;
+      }
+      return a >= 0 && (a+b) <= 1;
+    }
+  });
+})();
 
 Jax.Scene.Frustum = (function() {
   var RIGHT = 0, LEFT = 1, BOTTOM = 2, TOP = 3, FAR = 4, NEAR = 5;
@@ -5121,21 +6143,28 @@ Jax.Scene.Frustum = (function() {
 
   var klass = Jax.Class.create({
     initialize: function(modelview, projection) {
-      this.listeners = {update:[]};
-      this.callbacks = this.listeners;
       this.planes = {};
       for (var i = 0; i < 6; i++) this.planes[i] = new Jax.Geometry.Plane();
       this.setMatrices(modelview, projection);
     },
 
-    update: function() { if (this.mv && this.p) { extractFrustum(this); this.fireListeners('update'); } },
-    setModelviewMatrix: function(mv) { this.setMatrices(mv, this.p); },
-    setProjectionMatrix: function(p) { this.setMatrices(this.mv, p); },
+    update: function() {
+      if (this.mv && this.p) {
+        extractFrustum(this);
+        this.fireEvent('updated');
+      }
+      return this;
+    },
+
+    setViewMatrix: function(mv) { return this.setMatrices(mv, this.p); },
+
+    setProjectionMatrix: function(p) { return this.setMatrices(this.mv, p); },
 
     setMatrices: function(mv, p) {
       this.mv = mv;
       this.p  = p;
       this.update();
+      return this;
     },
 
     point: function(point) {
@@ -5165,13 +6194,7 @@ Jax.Scene.Frustum = (function() {
       return result;
     },
 
-    /* Arguments can either be an array of indices, or a position array [x,y,z] followed by width, height and depth.
-        Examples:
-          var cube = new Cube(...);
-          frustum.cube(cube.getCorners());
-          frustub.cube(cube.orientation.getPosition(), 1);
-          frustub.cube(cube.orientation.getPosition(), 1, 2, 3);
-     */
+
     cube: function(corners)
     {
       if (arguments.length == 2) { return varcube(this, arguments[0], arguments[1], arguments[1], arguments[1]); }
@@ -5194,15 +6217,11 @@ Jax.Scene.Frustum = (function() {
       return (c2 == 6) ? INSIDE : INTERSECT;
     },
 
-    addUpdateListener: function(callback) { this.listeners.update.push(callback); },
     sphereVisible: function(center, radius) { return this.sphere.apply(this, arguments) != OUTSIDE; },
-    pointVisible:  function(center)         { return this.point.apply(this, arguments)  != OUTSIDE; },
-    cubeVisible:   function(corners)        { return this.cube.apply(this, arguments)   != OUTSIDE; },
 
-    fireListeners: function(name) {
-      for (var i = 0; i < this.listeners[name].length; i++)
-        this.listeners[name][i]();
-    },
+    pointVisible:  function(center)         { return this.point.apply(this, arguments)  != OUTSIDE; },
+
+    cubeVisible:   function(corners)        { return this.cube.apply(this, arguments)   != OUTSIDE; },
 
     isValid: function() { return this.p && this.mv; },
 
@@ -5265,7 +6284,7 @@ Jax.Scene.Frustum = (function() {
 
       renderable.update = null;
 
-      frustum.addUpdateListener(function() {
+      frustum.addEventListener('updated', function() {
         if (!frustum.isValid()) { return; }
 
         renderable.upToDate = true;
@@ -5285,8 +6304,12 @@ Jax.Scene.Frustum = (function() {
   });
 
   klass.INSIDE = INSIDE;
+
   klass.OUTSIDE = OUTSIDE;
+
   klass.INTERSECT = INTERSECT;
+
+  klass.addMethods(Jax.Events.Methods);
 
   return klass;
 })();
@@ -5343,15 +6366,15 @@ Jax.Scene.LightSource = (function() {
       $super(data);
 
       var self = this;
-      this.camera.addEventListener('matrixUpdated', function() { self.invalidate(); });
+      this.camera.addEventListener('updated', function() { self.invalidate(); });
 
       this.spotExponent = this.spot_exponent;
       delete this.spot_exponent;
 
       this.shadowMatrix = mat4.create();
 
-      this.framebuffers = [new Jax.Framebuffer({width:2048,height:2048,depth:true,color:GL_RGBA}),
-                           new Jax.Framebuffer({width:2048,height:2048,depth:true,color:GL_RGBA})];
+      this.framebuffers = [new Jax.Framebuffer({width:1024,height:1024,depth:true,color:GL_RGBA}),
+                           new Jax.Framebuffer({width:1024,height:1024,depth:true,color:GL_RGBA})];
 
       setupProjection(this);
     },
@@ -5400,13 +6423,13 @@ Jax.Scene.LightSource = (function() {
 
     getShadowMapTexture: function(context) {
       setupProjection(this);
-      return this.framebuffers[0].getTextureBuffer(context, 0);
+      return this.framebuffers[0].getTexture(context, 0);
     },
 
     getShadowMapTextures: function(context) {
       setupProjection(this);
-      return [this.framebuffers[0].getTextureBuffer(context, 0),
-              this.framebuffers[1].getTextureBuffer(context, 0)];
+      return [this.framebuffers[0].getTexture(context, 0),
+              this.framebuffers[1].getTexture(context, 0)];
     },
 
     isShadowMapEnabled: function() {
@@ -5420,7 +6443,7 @@ Jax.Scene.LightSource = (function() {
     registerCaster: function(object) {
       var self = this;
       function updated() { self.invalidate(); }
-      object.camera.addEventListener('matrixUpdated', updated);
+      object.camera.addEventListener('updated', updated);
       this.invalidate();
     },
 
@@ -5441,8 +6464,15 @@ Jax.Scene.LightSource = (function() {
         var real_pass = context.current_pass;
         /* shadowgen pass */
         context.current_pass = Jax.Scene.SHADOWMAP_PASS;
-        this.updateShadowMap(context, this.boundingRadius, objects, options);
-        this.valid = true;
+        try {
+          if (this.shadowcaster)
+            this.updateShadowMap(context, this.boundingRadius, objects, options);
+          this.valid = true;
+        } catch(e) {
+          if (window.console && window.console.log) window.console.log(e.toString());
+          setTimeout(function() { throw e; }, 1);
+          this.shadowcaster = false;
+        }
         context.current_pass = real_pass;
       }
 
@@ -5616,6 +6646,8 @@ Jax.Scene.LightManager = (function() {
     },
 
     add: function(light) {
+      if (typeof(light) == "string") light = Jax.Scene.LightSource.find(light);
+
       if (this._lights.length == Jax.max_lights)
         throw new Error("Maximum number of light sources in a scene has been exceeded! Try removing some first.");
       for (var i = 0; i < this.objects.length; i++) {
@@ -5667,11 +6699,11 @@ Jax.Scene.LightManager = (function() {
     illuminate: function(context, options) {
       options = Jax.Util.normalizeOptions(options, {});
 
-      this.context.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      context.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       for (var i = 0; i < this._lights.length; i++) {
         this._current_light = i;
         this._lights[i].render(context, this.objects, options);
-        if (i == 0) this.context.glBlendFunc(GL_ONE, GL_ONE);
+        if (i == 0) context.glBlendFunc(GL_ONE, GL_ONE);
       }
 
       delete this._current_light;
@@ -5709,6 +6741,8 @@ Jax.Scene.LightManager = (function() {
 })();
 
 Jax.Camera = (function() {
+  var LOCAL_VIEW = [0,0,-1], LOCAL_UP = [0,1,0], LOCAL_RIGHT = [1,0,0];
+
   var POSITION = 0, VIEW = 1, RIGHT = 2, UP = 3, FORWARD = 4, SIDE = 5;
 
   /*
@@ -5727,33 +6761,30 @@ Jax.Camera = (function() {
     return buf;
   }
 
+  function tmpRotQuat(self) {
+    return self._rotquat = self._rotquat || quat4.create();
+  }
+
   function storeVecBuf(self, buftype) {
-    var world = self.matrices.mv;
+    var world = self.rotation;
 
     var position = (self._tmp[POSITION]);
     var result   = (self._tmp[buftype]);
 
-    position[0] = position[1] = position[2] = 0;
-    mat4.multiplyVec3(world, position, position);
+    vec3.set(self.position, position);
 
     switch(buftype) {
       case POSITION:
         return position;
         break;
       case VIEW:
-        result[0] = result[1] = 0; result[2] = -1;
-        mat4.multiplyVec3(world, result, result);
-        vec3.direction(result, position, result);
+        quat4.multiplyVec3(world, LOCAL_VIEW, result);
         break;
       case RIGHT:
-        result[0] = 1; result[1] = result[2] = 0;
-        mat4.multiplyVec3(world, result, result);
-        vec3.direction(result, position, result);
+        quat4.multiplyVec3(world, LOCAL_RIGHT, result);
         break;
       case UP:
-        result[1] = 1; result[0] = result[2] = 0;
-        mat4.multiplyVec3(world, result, result);
-        vec3.direction(result, position, result);
+        quat4.multiplyVec3(world, LOCAL_UP, result);
         break;
       default:
         throw new Error("Unexpected buftype: "+buftype);
@@ -5762,8 +6793,22 @@ Jax.Camera = (function() {
   }
 
   function matrixUpdated(self) {
-    self.normal_matrix_up_to_date = false;
-    self.frustum_up_to_date       = false;
+    self.stale = true;
+    self.frustum_up_to_date = false;
+  }
+
+  function calculateMatrices(self) {
+    self.stale = false;
+
+    var pos = storeVecBuf(self, POSITION);
+    quat4.toMat4(self.rotation, self.matrices.mv);
+    mat4.translate(self.matrices.mv, vec3.negate(pos), self.matrices.mv);
+    mat4.inverse(self.matrices.mv);
+
+    mat4.toInverseMat3(self.matrices.mv, self.matrices.n);
+    mat3.transpose(self.matrices.n);
+
+    self.fireEvent('matrixUpdated');
   }
 
   return Jax.Class.create({
@@ -5772,11 +6817,20 @@ Jax.Camera = (function() {
       /* used for temporary storage, just to avoid repeatedly allocating temporary vectors */
       this._tmp = [ vec3.create(), vec3.create(), vec3.create(), vec3.create(), vec3.create(), vec3.create() ];
 
+      this.rotation = quat4.create([0,0,0,1]);
+      this.position = vec3.create([0,0,0]);
+
       this.matrices = { mv: mat4.identity(mat4.create()), p : mat4.identity(mat4.create()), n : mat3.create() };
       this.frustum = new Jax.Scene.Frustum(this.matrices.mv, this.matrices.p);
 
-      this.addEventListener('matrixUpdated', function() { matrixUpdated(this); });
+      this.addEventListener('updated', function() { matrixUpdated(this); });
       this.reset();
+      this.setFixedYawAxis(true, vec3.UNIT_Y);
+    },
+
+    setFixedYawAxis: function(useFixedYaw, axis) {
+      this.fixed_yaw = useFixedYaw;
+      if (axis) this.fixed_yaw_axis = vec3.create(axis);
     },
 
     getFrustum: function() {
@@ -5785,7 +6839,7 @@ Jax.Camera = (function() {
       return this.frustum;
     },
 
-    getPosition:   function() { return vec3.create(storeVecBuf(this, POSITION)); },
+    getPosition:   function() { return vec3.create(this.position); },
 
     getViewVector: function() { return vec3.create(storeVecBuf(this, VIEW)); },
 
@@ -5798,7 +6852,7 @@ Jax.Camera = (function() {
       if (typeof(options.right)  == "undefined") options.right  =  1;
       if (typeof(options.top)    == "undefined") options.top    =  1;
       if (typeof(options.bottom) == "undefined") options.bottom = -1;
-      if (typeof(options.far)    == "undefined") options.far    = 2000;
+      if (typeof(options.far)    == "undefined") options.far    = 200;
       options.near = options.near || 0.01;
 
       mat4.ortho(options.left, options.right, options.bottom, options.top, options.near, options.far, this.matrices.p);
@@ -5817,41 +6871,103 @@ Jax.Camera = (function() {
     },
 
     setPosition: function() {
-      var vec = vec3.create();
       switch(arguments.length) {
-        case 1: vec3.set(arguments[0], vec); break;
-        case 3: vec3.set(arguments,    vec); break;
+        case 1: vec3.set(arguments[0], this.position); break;
+        case 3: vec3.set(arguments,    this.position); break;
         default: throw new Error("Invalid arguments for Camera#setPosition");
       }
 
-      this.orient(this.getViewVector(), this.getUpVector(), vec);
+      this.fireEvent('updated');
 
       return this;
     },
 
     setDirection: function(vector) {
-      return this.orient(vector);
+      var vec;
+      if (arguments.length == 3) vec = arguments;
+      else vec = vec3.create(vector);
+      vec3.normalize(vec);
+
+      var rotquat = vec3.toQuatRotation(storeVecBuf(this, VIEW), vec, tmpRotQuat(this));
+      quat4.multiply(rotquat, this.rotation, this.rotation);
+      quat4.normalize(this.rotation);
+
+      this.fireEvent('updated');
+      return this;
+    },
+
+    rotate: function() {
+      var amount = arguments[0];
+      var vec;
+      switch(arguments.length) {
+        case 2: vec = arguments[1]; break;
+        case 4: vec = this._tmp[0]; vec[0] = arguments[1]; vec[1] = arguments[2]; vec[2] = arguments[3];  break;
+        default: throw new Error("Invalid arguments");
+      }
+
+      return this.rotateWorld(amount, quat4.multiplyVec3(this.rotation, vec, this._tmp[0]));
+
+    },
+
+    rotateWorld: function() {
+      var amount = arguments[0];
+      var vec;
+      switch(arguments.length) {
+        case 2: vec = arguments[1]; break;
+        case 4: vec = this._tmp[0]; vec[0] = arguments[1]; vec[1] = arguments[2]; vec[2] = arguments[3];  break;
+        default: throw new Error("Invalid arguments");
+      }
+
+      var rotquat = quat4.fromAngleAxis(amount, vec, tmpRotQuat(this));
+      quat4.normalize(rotquat);
+      quat4.multiply(rotquat, this.rotation, this.rotation);
+
+      this.fireEvent('updated');
+      return this;
+    },
+
+    pitch: function(amount) {
+      var axis = storeVecBuf(this, RIGHT);
+      this.rotateWorld(amount, axis);
+    },
+
+    yaw: function(amount) {
+      var axis;
+      if (this.fixed_yaw) axis = this.fixed_yaw_axis;
+      else                axis = storeVecBuf(this, UP);
+      this.rotateWorld(amount, axis);
+    },
+
+    roll: function(amount) {
+      var axis = storeVecBuf(this, VIEW);
+      this.rotateWorld(amount, axis);
+    },
+
+    reorient: function(view, pos) {
+      if (pos) this.setPosition(pos);
+      this.setDirection(view);
+      return this;
     },
 
     orient: function(view, up) {
-      var pos;
+      var pos = null;
+
+      if (Jax.environment != Jax.PRODUCTION)
+        alert("Jax.Camera#orient is deprecated. Please use Jax.Camera#reorient instead.\n\n"+new Error().stack);
 
       switch(arguments.length) {
         case 1:
           view = store(this,     VIEW, view[0], view[1], view[2]);
-          up   = store(this,       UP);
-          pos  = store(this, POSITION);
+          up   = null;
           break;
         case 2:
           view = store(this,     VIEW, view[0], view[1], view[2]);
           up   = store(this,       UP,   up[0],   up[1],   up[2]);
-          pos  = store(this, POSITION);
           break;
         case 3:
           if (typeof(arguments[0]) == "number") {
             view = store(this,     VIEW,    arguments[0],    arguments[1],    arguments[2]);
-            up   = store(this,       UP);
-            pos  = store(this, POSITION);
+            up = null;
           } else {
             view = store(this,     VIEW,         view[0],         view[1],         view[2]);
             up   = store(this,       UP,           up[0],           up[1],           up[2]);
@@ -5861,7 +6977,6 @@ Jax.Camera = (function() {
         case 6:
           view = store(this,     VIEW, arguments[0], arguments[1], arguments[2]);
           up   = store(this,       UP, arguments[3], arguments[4], arguments[5]);
-          pos  = store(this, POSITION);
           break;
         case 9:
           view = store(this,     VIEW, arguments[0], arguments[1], arguments[2]);
@@ -5872,52 +6987,21 @@ Jax.Camera = (function() {
           throw new Error("Unexpected arguments for Camera#orient");
       }
 
-      vec3.add(pos,view,view);
-      this.lookAt(view, up, pos);
+      if (pos) this.setPosition(pos);
+      this.setDirection(view);
+
       return this;
     },
 
-    lookAt: function(point, up, pos) {
-      up  = up  || store(this, UP);
-      pos = pos || store(this, POSITION);
+    lookAt: function(point, pos) {
+      if (arguments.length > 2)
+        alert("Jax.Camera#lookAt with more than 2 arguments is deprecated. Please use only two arguments: the point to look at (a vec3) and an optional point to reposition the camera to (a vec3).\n\n"+new Error().stack);
 
-      /*
-        I can't seem to get mat4.lookAt() to work as expected. I suspect that the forward vector is not
-        calculated properly, as it seems to reverse the operands. Dunno if this is a bug or a misunderstanding
-        in expectations, but either way I've decided not to use it, and adapted this code from:
-          GLH at http://www.opengl.org/wiki/GluLookAt_code
-       */
-      var forward = this._tmp[FORWARD], side = this._tmp[SIDE];
-      var matrix2 = this.matrices.mv;
+      if (pos) this.setPosition(pos);
+      else pos = store(this, POSITION);
 
-      vec3.subtract(point, pos, forward);
-
-      var dot = vec3.dot(forward, up);
-      if (!isNaN(dot) && Math.abs(dot) > (1 - Math.EPSILON))
-        vec3.cross(store(this, RIGHT), forward, up);
-
-      vec3.normalize(forward);
-      vec3.cross(forward, up, side);
-      vec3.normalize(side);
-      vec3.cross(side, forward, up);
-      matrix2[0] = side[0];
-      matrix2[4] = side[1];
-      matrix2[8] = side[2];
-      matrix2[12]= 0;
-      matrix2[1] = up[0];
-      matrix2[5] = up[1];
-      matrix2[9] = up[2];
-      matrix2[13]= 0;
-      matrix2[2] = -forward[0];
-      matrix2[6] = -forward[1];
-      matrix2[10]= -forward[2];
-      matrix2[14]= 0.0;
-      matrix2[3] = matrix2[7] = matrix2[11] = 0;
-      matrix2[15] = 1;
-      mat4.translate(matrix2, vec3.negate(pos));
-      mat4.inverse(matrix2);
-
-      this.fireEvent('matrixUpdated');
+      var forward = this._tmp[FORWARD];
+      this.setDirection(vec3.subtract(point, pos, forward));
     },
 
     perspective: function(options) {
@@ -5926,7 +7010,7 @@ Jax.Camera = (function() {
       if (!options.height)throw new Error("Expected a screen height in Jax.Camera#perspective");
       options.fov  = options.fov  || 45;
       options.near = options.near || 0.01;
-      options.far  = options.far  || 2000;
+      options.far  = options.far  || 200;
 
       var aspect_ratio = options.width / options.height;
       mat4.perspective(options.fov, aspect_ratio, options.near, options.far, this.matrices.p);
@@ -5938,16 +7022,15 @@ Jax.Camera = (function() {
       this.fireEvent('matrixUpdated');
     },
 
-    getTransformationMatrix: function() { return this.matrices.mv; },
+    getTransformationMatrix: function() {
+      if (this.stale) calculateMatrices(this);
+      return this.matrices.mv;
+    },
 
     getProjectionMatrix: function() { return this.matrices.p; },
 
     getNormalMatrix: function() {
-      if (!this.normal_matrix_up_to_date) {
-        mat4.toInverseMat3(this.getTransformationMatrix(), this.matrices.n);
-        mat3.transpose(this.matrices.n);
-      }
-      this.normal_matrix_up_to_date = true;
+      if (this.stale) calculateMatrices(this);
       return this.matrices.n;
     },
 
@@ -5958,7 +7041,7 @@ Jax.Camera = (function() {
         winz = parseFloat(winz);
 
         var inf = [];
-        var mm = this.matrices.mv, pm = this.matrices.p;
+        var mm = this.getTransformationMatrix(), pm = this.matrices.p;
         var viewport = [0, 0, pm.width, pm.height];
 
         var m = mat4.set(mm, mat4.create());
@@ -5984,47 +7067,23 @@ Jax.Camera = (function() {
         return [this.unproject(winx, winy, 0), this.unproject(winx, winy, 1)];
     },
 
-    rotate: function() {
-      var amount = arguments[0];
-      var vec;
-      switch(arguments.length) {
-        case 2: vec = arguments[1]; break;
-        case 4: vec = this._tmp[0]; vec[0] = arguments[1]; vec[1] = arguments[2]; vec[2] = arguments[3];  break;
-        default: throw new Error("Invalid arguments");
-      }
-
-      if      (vec[1] == 0 && vec[2] == 0) mat4.rotateX(this.matrices.mv, amount*vec[0], this.matrices.mv);
-      else if (vec[0] == 0 && vec[2] == 0) mat4.rotateY(this.matrices.mv, amount*vec[1], this.matrices.mv);
-      else if (vec[0] == 0 && vec[1] == 0) mat4.rotateZ(this.matrices.mv, amount*vec[2], this.matrices.mv);
-      else                                 mat4.rotate (this.matrices.mv, amount,   vec, this.matrices.mv);
-
-      this.fireEvent('matrixUpdated');
-      return this;
-    },
-
     strafe: function(distance) {
-      this._tmp[FORWARD][0] = 1;
-      this._tmp[FORWARD][1] = 0;
-      this._tmp[FORWARD][2] = 0;
-      this.move(distance, this._tmp[FORWARD]);
+      this.move(distance, storeVecBuf(this, RIGHT));
       return this;
     },
 
     move: function(distance, direction) {
-      if (!direction) {
-        direction = this._tmp[FORWARD];
-        direction[0] = 0;
-        direction[1] = 0;
-        direction[2] = -1;
-      }
-      mat4.translate(this.matrices.mv, vec3.scale(direction, distance), this.matrices.mv);
-      this.fireEvent('matrixUpdated');
+      if (!direction) direction = storeVecBuf(this, VIEW);
+      vec3.add(vec3.scale(direction, distance, this._tmp[FORWARD]), this.position, this.position);
+      this.fireEvent('updated');
       return this;
     },
 
-    reset: function() { this.lookAt([0,0,-1], [0,1,0], [0,0,0]); }
+    reset: function() { this.lookAt([0,0,-1], [0,0,0]); }
   });
 })();
+
+Jax.Camera.prototype.setViewVector = Jax.Camera.prototype.setDirection;
 
 Jax.Camera.addMethods(Jax.Events.Methods);
 
@@ -6042,7 +7101,6 @@ Jax.World = (function() {
       this.context  = context;
       this.lighting = new Jax.Scene.LightManager(context);
       this.objects  = [];
-      this.shadow_casters = [];
     },
 
     addLightSource: function(light)   { this.lighting.add(light); },
@@ -6128,7 +7186,7 @@ Jax.World = (function() {
       return this.objects.length;
     },
 
-    getShadowCasters: function() { return this.lighting.getShadowCasters(); },//return this.shadow_casters; },
+    getShadowCasters: function() { return this.lighting.getShadowCasters(); },
 
     render: function(options) {
       var i;
@@ -6156,22 +7214,21 @@ Jax.World = (function() {
           this.objects[i].render(this.context, unlit);
         }
       }
+
+      return this;
     },
 
     update: function(timechange) {
       for (var i = this.objects.length-1; i >= 0; i--)
         if (this.objects[i].update)
           this.objects[i].update(timechange);
+      return this;
     },
 
     dispose: function() {
       var i, o;
 
       for (i = this.objects.length-1; i >= 0; i--)
-      /*
-        actually, we may not want to dispose the objects just yet. What if the user has a handle to them?
-        Maybe better to let JS GC take care of this one.
-      */
         (o = this.objects.pop());// && o.dispose();
 
       this.lighting = new Jax.Scene.LightManager(this.context);
@@ -6179,7 +7236,6 @@ Jax.World = (function() {
   });
 })();
 Jax.NORMAL_MAP = 1;
-
 
 Jax.Texture = (function() {
   function imageFailed(self, image) {
@@ -6294,13 +7350,15 @@ Jax.Texture = (function() {
   function pushLevel(self, level, context) {
     if (level == null) level = Jax.Texture._level++;
     self.textureLevel = level;
-    context.glActiveTexture(GL_TEXTURES[level]);
+    self.SLOT = GL_TEXTURES[level];
+    context.glActiveTexture(self.SLOT);
   }
 
   function popLevel(self, context) {
     Jax.Texture._level = self.textureLevel - 1;
     if (Jax.Texture._level < 0) Jax.Texture._level = 0;
     delete self.textureLevel;
+    self.SLOT = null;
   }
 
   return Jax.Class.create({
@@ -6334,9 +7392,10 @@ Jax.Texture = (function() {
 
       var i;
       var enums = ['min_filter', 'mag_filter', 'mipmap_hint', 'format', 'target', 'data_type', 'wrap_s', 'wrap_t'];
+      var global = Jax.getGlobal();
       for (i = 0; i < enums.length; i++)
         if (typeof(this.options[enums[i]]) == "string")
-          this.options[enums[i]] = window[this.options[enums[i]]];
+          this.options[enums[i]] = global[this.options[enums[i]]];
 
       if (path_or_array) {
         if (typeof(path_or_array) == "string") {
@@ -6363,17 +7422,29 @@ Jax.Texture = (function() {
     },
 
     getTarget: function() { return this.options.target; },
+
     getMinFilter: function() { return this.options.min_filter; },
+
     getMagFilter: function() { return this.options.mag_filter; },
+
     getGeneratesMipmaps: function() { return this.options.generate_mipmap; },
+
     getMipmapHint: function() { return this.options.mipmap_hint; },
+
     getFormat: function() { return this.options.format; },
+
     getDataType: function() { return this.options.data_type; },
+
     getWrapS: function() { return this.options.wrap_s; },
+
     getWrapT: function() { return this.options.wrap_t; },
+
     getFlipY: function() { return this.options.flip_y; },
+
     getPremultipliesAlpha: function() { return this.options.premultiply_alpha; },
+
     getDoesColorspaceConversion: function() { return this.options.colorspace_conversion; },
+
     getOnloadFunc: function() { return this.options.onload; },
 
     refresh: function(context) {
@@ -6395,13 +7466,15 @@ Jax.Texture = (function() {
 
       context.glBindTexture(this.options.target, null);
       this.valid[context.id] = true;
+      return this;
     },
 
     generateMipmap: function(context) {
       context.glGenerateMipmap(this.options.target);
+      return this;
     },
 
-    invalidate: function() { this.valid.clear(); },
+    invalidate: function() { this.valid.clear(); return this; },
 
     dispose: function(context) {
       context.glDeleteTexture(getHandle(context));
@@ -6434,12 +7507,15 @@ Jax.Texture = (function() {
         callback.call(this, this.textureLevel);
         this.unbind(context);
       }
+
+      return this;
     },
 
     unbind: function(context) {
-      if (this.textureLevel != undefined) context.glActiveTexture(GL_TEXTURES[this.textureLevel]);
+      if (this.textureLevel != undefined) context.glActiveTexture(this.SLOT);
       context.glBindTexture(this.options.target, null);
       popLevel(this, context);
+      return this;
     },
 
     ready: function() {
@@ -6475,14 +7551,8 @@ Jax.EVENT_METHODS = (function() {
 
   function buildKeyEvent(self, evt) {
     var keyboard = self.keyboard;
-
     evt = evt || window.event || {};
     keyboard.last = evt;
-
-    /*
-    TODO track all keypresses and whatnot via @keyboard, so all keys can be queried at any given time
-     */
-
     return evt;
   }
 
@@ -6550,18 +7620,30 @@ Jax.EVENT_METHODS = (function() {
     mouse.y = evt.pageY - cumulativeOffset[1];
     mouse.y = self.canvas.height - mouse.y; // invert y
 
-    mouse.diffx = mouse.x - mouse.offsetx;
-    mouse.diffy = mouse.y - mouse.offsety;
+    if (evt.type == 'mouseover') {
+      mouse.diffx = mouse.diffy = 0;
+    } else {
+      mouse.diffx = mouse.x - mouse.offsetx;
+      mouse.diffy = mouse.y - mouse.offsety;
+    }
 
     if (evt.type == "mousedown" || evt.type == "onmousedown") {
       mouse.down = mouse.down || {count:0};
-      mouse.down["button"+evt.which] = {at:[mouse.x,mouse.y]};
+      mouse.down["button"+evt.which] = {at:[mouse.x,mouse.y],time:Jax.uptime};
+      mouse.down.count++;
+    } else if (evt.type == "click" || evt.type == "onclick") {
+      evt.cancel = false;
+      if (mouse.down && mouse.down["button"+evt.which]) {
+        evt.cancel = !!Jax.click_speed && (Jax.uptime - mouse.down["button"+evt.which].time) > Jax.click_speed;
+      }
     } else if (evt.type == "mouseup" || evt.type == "onmouseup") {
       if (mouse.down)
       {
         mouse.down.count--;
-        if (mouse.down.count <= 0) mouse.down = null;
+        if (mouse.down.count < 0) mouse.down.count = 0;
       }
+    } else if (evt.type == "mouseout" || evt.type == "onmouseout") {
+      mouse.down = null;
     }
 
     evt.x = mouse.x;
@@ -6574,6 +7656,7 @@ Jax.EVENT_METHODS = (function() {
   }
 
   function dispatchEvent(self, evt) {
+    if (evt.cancel) return;
     var type = evt.type.toString();
     if (type.indexOf("on") == 0) type = type.substring(2, type.length);
     type = type.toLowerCase();
@@ -6605,7 +7688,75 @@ Jax.EVENT_METHODS = (function() {
           'input', 'form', 'textarea', 'label', 'fieldset', 'legend', 'select', 'optgroup', 'option', 'button'
   ];
 
+  function registerListener(self, type, func) {
+    if (self.canvas.addEventListener) {
+      /* W3 */
+      self.canvas.addEventListener(type, func, false);
+    } else {
+      /* IE */
+      self.canvas.attachEvent("on"+type, func);
+    }
+  }
+
   return {
+    disposeEventListeners: function() {
+      this.unregisterMouseListeners();
+      this.unregisterKeyListeners();
+    },
+
+    registerMouseListeners: function(receiver) {
+      var register = {mouseover:1,mouseout:1}, name;
+      for (name in receiver) {
+        switch(name) {
+          case 'mouse_pressed' : register['mousedown'] = 1; break;
+          case 'mouse_released': register['mouseup'] = 1; break;
+          case 'mouse_dragged' : // same as mouse_moved
+          case 'mouse_moved'   : register['mousedown'] = register['mouseup'] = register['mousemove'] = 1; break;
+          case 'mouse_clicked' : register['click'] = register['mousedown'] = 1; break;
+          case 'mouse_exited'  : register['mouseout'] = 1; break;
+          case 'mouse_entered' : register['mouseover'] = 1; break;
+        };
+      }
+
+      for (name in register) {
+        if (name == 'mousemove')
+          registerListener(this, name, this._evt_mousemovefunc);
+        else
+          registerListener(this, name, this._evt_mousefunc);
+      }
+    },
+
+    unregisterMouseListeners: function() {
+      if (this._evt_mousefunc)     this.canvas.removeEventListener(this._evt_mousefunc);
+      if (this._evt_mousemovefunc) this.canvas.removeEventListener(this._evt_mousemovefunc);
+    },
+
+    registerKeyListeners: function() {
+      if (this.canvas.addEventListener) {
+        /* W3 */
+        document.addEventListener('keydown',   this._evt_keyfunc,       false);
+        document.addEventListener('keypress',  this._evt_keyfunc,       false);
+        document.addEventListener('keyup',     this._evt_keyfunc,       false);
+      } else {
+        /* IE */
+        document.attachEvent('onkeydown',   this._evt_keyfunc);
+        document.attachEvent('onkeypress',  this._evt_keyfunc);
+        document.attachEvent('onkeyup',     this._evt_keyfunc);
+      }
+    },
+
+    unregisterKeyListeners: function() {
+      if (!this._evt_keyfunc) return;
+
+      this.canvas.removeEventListener(this._evt_keyfunc);
+      document.removeEventListener('keydown',    this._evt_keyfunc, false);
+      document.removeEventListener('keyup',      this._evt_keyfunc, false);
+      document.removeEventListener('keypress',   this._evt_keyfunc, false);
+      document.removeEventListener('onkeydown',  this._evt_keyfunc, false);
+      document.removeEventListener('onkeyup',    this._evt_keyfunc, false);
+      document.removeEventListener('onkeypress', this._evt_keyfunc, false);
+    },
+
     setupEventListeners: function() {
       this.keyboard = {};
       this.mouse = {};
@@ -6613,21 +7764,21 @@ Jax.EVENT_METHODS = (function() {
       var canvas = this.canvas;
       var self = this;
 
-      var mousefunc     = function(evt) {
+      this._evt_mousefunc     = function(evt) {
         if (!self.current_controller) return;
         evt = buildMouseEvent(self, evt);
         return dispatchEvent(self, evt);
       };
-      var mousemovefunc = function(evt) {
+      this._evt_mousemovefunc = function(evt) {
         if (!self.current_controller) return;
         evt = buildMouseEvent(self, evt);
-        if (self.mouse && self.mouse.down == null) // mouse is not being dragged
+        if (self.mouse && (!self.mouse.down || self.mouse.down.count <= 0)) // mouse is not being dragged
           evt.move_type = "mousemove";
         else
           evt.move_type = "mousedrag";
         return dispatchEvent(self, evt);
       };
-      var keyfunc       = function(evt) {
+      this._evt_keyfunc       = function(evt) {
         if (evt.which) evt.str = String.fromCharCode(evt.which);
         if (document.activeElement) {
           if (ignoreKeyTagNames.indexOf(document.activeElement.tagName) != -1)
@@ -6640,35 +7791,48 @@ Jax.EVENT_METHODS = (function() {
         return dispatchEvent(self, evt);
       };
 
-      if (canvas.addEventListener) {
-        /* W3 */
-        canvas.addEventListener('click',     mousefunc,     false);
-        canvas.addEventListener('mousedown', mousefunc,     false);
-        canvas.addEventListener('mousemove', mousemovefunc, false);
-        canvas.addEventListener('mouseout',  mousefunc,     false);
-        canvas.addEventListener('mouseover', mousefunc,     false);
-        canvas.addEventListener('mouseup',   mousefunc,     false);
-        document.addEventListener('keydown',   keyfunc,       false);
-        document.addEventListener('keypress',  keyfunc,       false);
-        document.addEventListener('keyup',     keyfunc,       false);
-      } else {
-        /* IE */
-        canvas.attachEvent('onclick',     mousefunc    );
-        canvas.attachEvent('onmousedown', mousefunc    );
-        canvas.attachEvent('onmousemove', mousemovefunc);
-        canvas.attachEvent('onmouseout',  mousefunc    );
-        canvas.attachEvent('onmouseover', mousefunc    );
-        canvas.attachEvent('onmouseup',   mousefunc    );
-        document.attachEvent('onkeydown',   keyfunc      );
-        document.attachEvent('onkeypress',  keyfunc      );
-        document.attachEvent('onkeyup',     keyfunc      );
-      }
+      this.registerKeyListeners();
+
     }
   };
 })();
 
 Jax.Context = (function() {
   function setupContext(self) {
+    if (!self.canvas.eventListeners) {
+      /* TODO merge this with jax/webgl/core/events.js and use for all Jax event handling */
+      self.canvas.eventListeners = {};
+      var _add = self.canvas.addEventListener, _remove = self.canvas.removeEventListener;
+
+      self.canvas.getEventListeners = function(type) {
+        if (type) return (this.eventListeners[type] = this.eventListeners[type] || []);
+        else {
+          var ret = [];
+          for (var i in this.eventListeners) ret = ret.concat(this.eventListeners[i]);
+          return ret;
+        }
+      };
+
+      self.canvas.addEventListener = function(type, listener, capture) {
+        this.getEventListeners(type).push(listener);
+        _add.call(this, type, listener, capture || false);
+      }
+
+      self.canvas.removeEventListener = function(type, listener, capture) {
+        if (typeof(type) == "string") {
+          var listeners = this.getEventListeners(type);
+          var index = listeners.indexOf(listener);
+          if (index != -1) {
+            listeners.splice(index, 1);
+            _remove.call(this, type, listener, capture || false);
+          }
+        } else if (!listener) {
+          for (var i in this.eventListeners)
+            this.removeEventListener(i, type, false);
+        }
+      };
+    }
+
     try { self.gl = self.canvas.getContext(WEBGL_CONTEXT_NAME, WEBGL_CONTEXT_OPTIONS); } catch(e) { }
     if (!self.gl) throw new Error("WebGL could not be initialized!");
   }
@@ -6703,42 +7867,49 @@ Jax.Context = (function() {
   }
 
   function startRendering(self) {
+    if (self.isRendering()) return;
+
     function render() {
-      if (self.calculateFramerate) updateFramerate(self);
-      if (self.current_view) {
-        self.prepare();
-        self.current_view.render();
-        var len = self.afterRenderFuncs.length;
-        for (var i = 0; i < len; i++) self.afterRenderFuncs[i].call(self);
-        self.render_interval = requestAnimFrame(render, self.canvas);
-      }
-      else {
-        clearTimeout(self.render_interval);
-        self.render_interval = null;
+      try {
+        if (self.isDisposed()) return;
+        if (self.calculateFramerate) updateFramerate(self);
+        if (self.current_view) {
+          self.prepare();
+          self.current_view.render();
+          var len = self.afterRenderFuncs.length;
+          for (var i = 0; i < len; i++) self.afterRenderFuncs[i].call(self);
+          self.render_interval = requestAnimFrame(render, self.canvas);
+        }
+        else {
+          self.stopRendering();
+        }
+      } catch(error) {
+        self.handleError('render', error);
       }
     }
 
     self.render_interval = setTimeout(render, Jax.render_speed);
   }
 
-  function stopRendering(self) {
-    clearTimeout(self.render_interval);
-  }
-
   function startUpdating(self) {
-    function updateFunc() {
-      var timechange = updateUpdateRate(self);
+    if (self.isUpdating()) return;
 
-      self.update(timechange);
-      var len = self.afterUpdateFuncs.length;
-      for (var i = 0; i < len; i++) self.afterUpdateFuncs[i].call(self);
-      self.update_interval = setTimeout(updateFunc, Jax.update_speed);
+    function updateFunc() {
+      try {
+        if (self.isDisposed()) return;
+        var timechange = updateUpdateRate(self);
+
+        self.update(timechange);
+        var len = self.afterUpdateFuncs.length;
+        for (var i = 0; i < len; i++) self.afterUpdateFuncs[i].call(self);
+        self.update_interval = setTimeout(updateFunc, Jax.update_speed);
+
+        if (Jax.SHUTDOWN_IN_PROGRESS) self.dispose();
+      } catch(error) {
+        self.handleError('update', error);
+      }
     }
     updateFunc();
-  }
-
-  function stopUpdating(self) {
-    clearTimeout(self.update_interval);
   }
 
   function setupView(self, view) {
@@ -6756,43 +7927,68 @@ Jax.Context = (function() {
 
   function reloadMatrices(self) {
     self.matrix_stack.reset(); // reset depth
-    self.matrix_stack.loadModelMatrix(Jax.IDENTITY_MATRIX);
+    self.matrix_stack.loadModelMatrix(mat4.IDENTITY);
     self.matrix_stack.loadViewMatrix(self.player.camera.getTransformationMatrix());
     self.matrix_stack.loadProjectionMatrix(self.player.camera.getProjectionMatrix());
   }
 
   var klass = Jax.Class.create({
-    initialize: function(canvas) {
-      if (typeof(canvas) == "string") canvas = document.getElementById(canvas);
-      if (!canvas) throw new Error("Can't initialize a WebGL context without a canvas!");
-      this.id = ++Jax.Context.identifier;
-      this.canvas = canvas;
-      setupContext(this);
-      this.setupEventListeners();
-      this.render_interval = null;
-      this.glClearColor(0.0, 0.0, 0.0, 1.0);
-      this.glClearDepth(1.0);
-      this.glEnable(GL_DEPTH_TEST);
-      this.glDepthFunc(GL_LEQUAL);
-      this.glEnable(GL_BLEND);
-      this.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      this.checkForRenderErrors();
-      this.world = new Jax.World(this);
-      this.player = {camera: new Jax.Camera()};
-      this.player.camera.perspective({width:canvas.width, height:canvas.height});
-      this.matrix_stack = new Jax.MatrixStack();
-      this.current_pass = Jax.Scene.AMBIENT_PASS;
-      this.afterRenderFuncs = [];
-      this.afterUpdateFuncs = [];
-      this.framerate = 0;
-      this.frames_per_second = 0;
-      this.updates_per_second = 0;
+    initialize: function(canvas, options) {
+      try {
+        if (typeof(canvas) == "string") canvas = document.getElementById(canvas);
+        if (!canvas) throw new Error("Can't initialize a WebGL context without a canvas!");
 
-      this.framerate_sample_ratio = 0.9;
+        options = Jax.Util.normalizeOptions(options, { alertErrors: true });
+        this.alertErrors = options.alertErrors;
+        this.id = ++Jax.Context.identifier;
+        this.canvas = canvas;
+        this.setupEventListeners();
+        this.render_interval = null;
+        this.world = new Jax.World(this);
+        this.player = {camera: new Jax.Camera()};
+        this.player.camera.perspective({width:canvas.width, height:canvas.height});
+        this.matrix_stack = new Jax.MatrixStack();
+        this.current_pass = Jax.Scene.AMBIENT_PASS;
+        this.afterRenderFuncs = [];
+        this.afterUpdateFuncs = [];
+        this.framerate = 0;
+        this.frames_per_second = 0;
+        this.updates_per_second = 0;
 
-      startUpdating(this);
+        this.framerate_sample_ratio = 0.9;
+
+        setupContext(this);
+        this.glClearColor(0.0, 0.0, 0.0, 1.0);
+        this.glClearDepth(1.0);
+        this.glEnable(GL_DEPTH_TEST);
+        this.glDepthFunc(GL_LEQUAL);
+        this.glEnable(GL_BLEND);
+        this.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        this.checkForRenderErrors();
+
+        this.startUpdating();
+      } catch(e) {
+        this.handleError('initialize', e);
+      }
+
       if (Jax.routes.isRouted("/"))
         this.redirectTo("/");
+    },
+
+    startUpdating: function() { startUpdating(this); return this; },
+
+    startRendering: function() { startRendering(this); return this; },
+
+    stopRendering: function() {
+      clearTimeout(this.render_interval);
+      this.render_interval = null;
+      return this;
+    },
+
+    stopUpdating: function() {
+      clearTimeout(this.update_interval);
+      this.update_interval = null;
+      return this;
     },
 
     getFramesPerSecond: function() { this.calculateFramerate = true; return this.frames_per_second; },
@@ -6816,19 +8012,50 @@ Jax.Context = (function() {
     },
 
     redirectTo: function(path) {
-      stopRendering(this);
+      try {
+        this.stopRendering();
+        this.stopUpdating();
 
-      this.world.dispose();
-      this.player.camera.reset();
-      /* yes, this is necessary. If the routing fails, controller must be null to prevent #update with a new world. */
-      this.current_controller = this.current_view = null;
-      this.current_controller = Jax.routes.dispatch(path, this);
-      if (!this.current_controller.view_key)
-        throw new Error("Controller '"+this.current_controller.getControllerName()+"' did not produce a renderable result");
-      this.current_view = Jax.views.find(this.current_controller.view_key);
+        var current_controller = this.current_controller, current_view = this.current_view;
+        var route = Jax.routes.recognize_route(path);
 
-      setupView(this, this.current_view);
-      if (!this.isRendering()) startRendering(this);
+        /* yes, this is necessary. If the routing fails, controller must be null to prevent #update with a new world. */
+
+        if (!current_controller || current_controller.klass != route.controller) {
+          this.unregisterMouseListeners();
+          this.world.dispose();
+          this.player.camera.reset();
+          this.current_controller = Jax.routes.dispatch(path, this);
+
+          if (!this.current_controller.view_key)
+            throw new Error("Controller '"+this.current_controller.getControllerName()+"' did not produce a renderable result");
+
+          this.current_view = Jax.views.find(this.current_controller.view_key);
+          setupView(this, this.current_view);
+        } else {
+          current_controller.fireAction(route.action);
+          this.current_controller = current_controller;
+
+          var newView, currentKey = current_controller.view_key;
+          try {
+            if (current_controller.view_key && (newView = Jax.views.find(current_controller.view_key))) {
+              this.current_view = newView;
+              setupView(this, newView);
+            }
+          } catch(e) {
+            current_controller.view_key = currentKey;
+            this.current_view = current_view;
+          }
+        }
+
+        if (!this.isRendering()) this.startRendering();
+        if (!this.isUpdating())  this.startUpdating();
+
+        if (this.current_controller)
+          this.registerMouseListeners(this.current_controller);
+      } catch(e) {
+        this.handleError('redirect', e);
+      }
 
       return this.current_controller;
     },
@@ -6849,10 +8076,15 @@ Jax.Context = (function() {
       return this.render_interval != null;
     },
 
+    isUpdating: function() {
+      return this.update_interval != null;
+    },
+
     dispose: function() {
       this.disposed = true;
-      stopRendering(this);
-      stopUpdating(this);
+      this.stopRendering();
+      this.stopUpdating();
+      this.disposeEventListeners();
     },
 
     isDisposed: function() {
@@ -6874,7 +8106,7 @@ Jax.Context = (function() {
 
     checkForRenderErrors: function() {
       /* Error checking is slow, so don't do it in production mode */
-      if (Jax.environment == "production") return;
+      if (Jax.environment == Jax.PRODUCTION) return;
 
       var error = this.glGetError();
       if (error != GL_NO_ERROR)
@@ -6893,6 +8125,44 @@ Jax.Context = (function() {
       }
     },
 
+    handleError: function(phase, error) {
+      var message = error.toString();
+      error = {
+        phase: phase,
+        error: error.error || error,
+        stack: error._stack || error.stack,
+        message: error.toString(),
+        toString: function() { return message; }
+      };
+      this.fireEvent('error', error);
+
+      var errorHandler = this.current_controller;
+      if ((!errorHandler || !errorHandler.error) && typeof(ApplicationController) != 'undefined')
+        errorHandler = Jax.getGlobal().ApplicationController.prototype;
+      if (errorHandler && errorHandler.error) error.silence = errorHandler.error(error);
+
+      if (!error.silence && !error.silenced) {
+        if (error.phase == 'initialize') {
+
+          document.location.pathname = Jax.webgl_not_supported_path || "/webgl_not_supported.html";
+          throw error.toString()+"\n\n"+error.stack;
+        }
+
+        var log = null, stack = error._stack || error.stack || "(backtrace unavailable)";
+        var message = error.toString()+"\n\n"+stack.toString();
+
+        if (typeof(console) != 'undefined') {
+          log = console.error || console.log;
+          if (log) log.call(console, message);
+        }
+        if (Jax.environment != Jax.PRODUCTION && this.alertErrors)
+          alert(message);
+        throw error.error;
+      }
+
+      return this;
+    },
+
     handleRenderError: function(method_name, args, err) {
       throw err;
     }
@@ -6909,6 +8179,7 @@ Jax.Context = (function() {
 Jax.Context.identifier = 0;
 Jax.Context.addMethods(GL_METHODS);
 Jax.Context.addMethods(Jax.EVENT_METHODS);
+Jax.Context.addMethods(Jax.Events.Methods);
 Jax.Noise = (function() {
   var perm/*[256]*/ = [151,160,137,91,90,15,
     131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,
@@ -7010,10 +8281,6 @@ Jax.Noise = (function() {
       perm_buf = new Uint8Array(pixels);
     }
 
-    tex.bind(context, function() {
-      context.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, perm_buf);
-    });
-
     return tex;
   }
 
@@ -7028,9 +8295,6 @@ Jax.Noise = (function() {
 
     if (!simplex_buf) simplex_buf = new Uint8Array(simplex4);
     var tex = new Jax.Texture({min_filter:GL_NEAREST,mag_filter:GL_NEAREST, width:64, height:1});
-    tex.bind(context, function() {
-      context.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, simplex_buf);
-    });
     return tex;
   }
 
@@ -7060,10 +8324,22 @@ Jax.Noise = (function() {
       grad_buf = new Uint8Array(pixels);
     }
 
-    tex.bind(context, function() {
+    return tex;
+  }
+
+  function prepareAll(self, context) {
+    if (!perm_buf || !simplex_buf || !grad_buf)
+      throw new Error("Unknown error: one of the noise buffers is null!");
+
+    self.perm.bind(context, function() {
+      context.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, perm_buf);
+    });
+    self.simplex.bind(context, function() {
+      context.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, simplex_buf);
+    });
+    self.grad.bind(context, function() {
       context.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, grad_buf);
     });
-    return tex;
   }
 
   return Jax.Class.create({
@@ -7073,9 +8349,24 @@ Jax.Noise = (function() {
       this.simplex = initSimplexTexture(context);
 
       this.grad = initGradTexture(context);
+
+      if (context) prepareAll(this, context);
+    },
+
+    bind: function(context, uniforms) {
+      if (!this.isPrepared(context)) prepareAll(this, context);
+      uniforms.texture('permTexture',    this.perm,    context);
+      uniforms.texture('simplexTexture', this.simplex, context);
+      uniforms.texture('gradTexture',    this.grad,    context);
+    },
+
+    isPrepared: function(context) {
+      return this.perm.isValid(context);
     }
   });
 })();
+
+Jax.noise = new Jax.Noise();
 
 Jax.shaders = {};
 
@@ -7095,8 +8386,20 @@ Jax.max_lights = undefined;
 Jax.uptime = 0.0;
 Jax.uptime_tracker = new Date();
 
-/* TODO: verify : is setInterval better for updates, or should be we using requestAnimFrame? */
-setInterval(function() { Jax.uptime = (new Date() - Jax.uptime_tracker) / 1000; }, 33);
+Jax.shutdown = function() {
+  if (Jax.uptime_interval) clearInterval(Jax.uptime_interval);
+  Jax.uptime_interval = null;
+  Jax.SHUTDOWN_IN_PROGRESS = true;
+};
+
+Jax.restart = function() {
+  Jax.SHUTDOWN_IN_PROGRESS = false;
+  /* TODO: verify : is setInterval better for updates, or should be we using requestAnimFrame? */
+  if (!Jax.uptime_interval)
+    Jax.uptime_interval = setInterval(function() { Jax.uptime = (new Date() - Jax.uptime_tracker) / 1000; }, 33);
+};
+
+Jax.restart();
 
 /* meshes */
 Jax.Mesh.Quad = (function() {
@@ -7165,22 +8468,22 @@ Jax.Mesh.Cube = Jax.Class.create(Jax.Mesh, {
     this.sides = {};
 
     this.sides.left = new Jax.Model({mesh: new Jax.Mesh.Quad(d, h)});
-    this.sides.left.camera.orient([-1,0,0], [0,1,0], [-w/2,0,0]);
+    this.sides.left.camera.reorient([-1,0,0], [-w/2,0,0]);
 
     this.sides.right = new Jax.Model({mesh: new Jax.Mesh.Quad(d, h)});
-    this.sides.right.camera.orient([1,0,0], [0,1,0], [w/2,0,0]);
+    this.sides.right.camera.reorient([1,0,0], [w/2,0,0]);
 
     this.sides.front = new Jax.Model({mesh: new Jax.Mesh.Quad(w, h)});
-    this.sides.front.camera.orient([0,0,1], [0,1,0], [0,0,d/2]);
+    this.sides.front.camera.reorient([0,0,1], [0,0,d/2]);
 
     this.sides.back = new Jax.Model({mesh: new Jax.Mesh.Quad(w, h)});
-    this.sides.back.camera.orient([0,0,-1], [0,1,0], [0,0,-d/2]);
+    this.sides.back.camera.reorient([0,0,-1], [0,0,-d/2]);
 
     this.sides.top = new Jax.Model({mesh: new Jax.Mesh.Quad(w, d)});
-    this.sides.top.camera.orient([0,1,0], [0,0,1], [0,h/2,0]);
+    this.sides.top.camera.reorient([0,1,0], [0,h/2,0]);
 
     this.sides.bottom = new Jax.Model({mesh: new Jax.Mesh.Quad(w, d)});
-    this.sides.bottom.camera.orient([0,-1,0], [0,0,-1], [0,-h/2,0]);
+    this.sides.bottom.camera.reorient([0,-1,0], [0,-h/2,0]);
   },
 
   init: function(verts, colors, texes, norms) {
@@ -7277,6 +8580,8 @@ Jax.Mesh.Plane = Jax.Class.create(Jax.Mesh, {
           verts.push(vx,        0, vz);
           verts.push(vx-x_unit, 0, vz);
           norms.push(0,1,0,  0,1,0);
+          texes.push(x / (x_seg-1), z / (z_seg-1));
+          texes.push((x-1) / (x_seg-1), z / (z_seg-1));
       }
 
       for (z = z_seg-1; z >= 0; z--) {
@@ -7285,6 +8590,8 @@ Jax.Mesh.Plane = Jax.Class.create(Jax.Mesh, {
           verts.push(vx-x_unit, 0, vz);
           verts.push(vx, 0, vz);
           norms.push(0,1,0,  0,1,0);
+          texes.push((x-1) / (x_seg-1), z / (z_seg-1));
+          texes.push(x / (x_seg-1), z / (z_seg-1));
       }
     }
   }
@@ -7380,9 +8687,20 @@ Jax.Mesh.Teapot = (function() {
  */
 var LightSource = Jax.Scene.LightSource;
 var Material = Jax.Material;
+
+
+/* Export globals into 'exports' for CommonJS */
+if (typeof(exports) != "undefined") {
+  exports.Jax = Jax;
+  exports.mat4 = mat4;
+  exports.mat3 = mat3;
+  exports.vec3 = vec3;
+  exports.glMatrixArrayType = glMatrixArrayType;
+  exports.quat4 = quat4;
+}
 Jax.Material.Lighting = Jax.Class.create(Jax.Material, {
-  initialize: function($super) {
-    $super({shader: "lighting"});
+  initialize: function($super, options) {
+    $super(Jax.Util.normalizeOptions(options, {shader: "lighting"}));
   },
 
   setUniforms: function($super, context, mesh, options, uniforms) {

@@ -1,0 +1,18 @@
+shared uniform mat3 nMatrix;
+shared uniform mat4 mvMatrix, pMatrix;
+
+shared varying vec2 vTexCoords;
+shared varying vec3 vNormal;
+shared varying vec4 vBaseColor;
+
+uniform sampler2D sceneTex;
+
+/* should be uniforms */
+const float vx_offset = 1.0;
+const float hatch_y_offset = 5.0;
+const float lum_threshold_1 = 0.8;
+const float lum_threshold_2 = 0.65;
+const float lum_threshold_3 = 0.25;
+const float lum_threshold_4 = 0.01;
+
+varying vec3 vPos;

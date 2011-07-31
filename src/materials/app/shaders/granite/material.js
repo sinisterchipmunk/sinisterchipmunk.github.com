@@ -15,11 +15,10 @@ Jax.Material.Granite = Jax.Class.create(Jax.Material, {
     uniforms.set('mvMatrix', context.getModelViewMatrix());
     uniforms.set('nMatrix', context.getNormalMatrix());
     uniforms.set('pMatrix', context.getProjectionMatrix());
+    uniforms.set('TIME', Jax.uptime);
 
-    this.setupNoise(context, mesh, options, uniforms);
+    Jax.noise.bind(context, uniforms);
   },
-
-  helpers: function() { return [NoisyHelper]; },
 
   setAttributes: function($super, context, mesh, options, attributes) {
     attributes.set('VERTEX_POSITION',  mesh.getVertexBuffer());

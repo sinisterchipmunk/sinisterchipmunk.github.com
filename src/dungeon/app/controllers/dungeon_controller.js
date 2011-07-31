@@ -23,10 +23,6 @@ var material;
       var previousPosition = this.player.camera.getPosition();
       this.player.camera.move((this.movement.forward+this.movement.backward)*timechange*speed);
       this.player.camera.strafe((this.movement.left+this.movement.right)*timechange*speed);
-      // make sure the user can't flip the camera upside down, and that the user can't "fly"
-      var pos = this.player.camera.getPosition();
-      pos[1] = 0.5; // set Y value in case it changed
-      this.player.camera.orient(this.player.camera.getViewVector(), [0,1,0], pos);
       
       var newpos = this.player.camera.getPosition();
 
@@ -37,8 +33,9 @@ var material;
     
     // Some special actions are fired whenever the corresponding input is
     // received from the user.
-    mouse_moved: function(event) {
-      this.context.player.camera.rotate(0.01, this.context.mouse.diffy, -this.context.mouse.diffx, 0);
+    mouse_dragged: function(event) {
+      this.player.camera.yaw(-0.01 * this.context.mouse.diffx);
+      this.player.camera.pitch(0.01 * this.context.mouse.diffy);
     },
     
     key_pressed: function(event) {
