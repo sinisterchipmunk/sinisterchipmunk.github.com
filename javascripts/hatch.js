@@ -155,10 +155,100 @@ Jax.Material.Texture.normalizeTexture = function(tex) {
   if (tex.isKindOf && tex.isKindOf(Jax.Texture)) return tex;
   return new Jax.Texture(tex);
 };
+var BlenderModel = (function() {
+  return Jax.Model.create({
+    after_initialize: function() {
+      var self = this;
+      self.mesh = new Jax.Mesh({
+        material: self.material,
+
+        init: function(vertices, colors, texCoords, normals, indices) {
+          if (self.data) {
+            function push(source, dest) {
+              for (i = 0; source && i < source.length; i++)
+                dest.push(source[i]);
+            }
+
+            var i, j;
+            for (var meshName in self.data)
+            {
+              var meshData = self.data[meshName];
+              push(meshData.vertices, vertices);
+              push(meshData.indices, indices);
+              push(meshData.normals, normals);
+
+              self.mesh.default_material = new Jax.Material({
+                layers:[
+                  {type:"Lighting"}
+                ]
+              });
+
+              if (self.isLit())
+                self.mesh.default_material.addLayer(new Jax.Material.ShadowMap());
+
+              self.dataRegion = new Jax.DataRegion();
+              self.mesh.colorLayers = [];
+              for (i = 0; meshData.colors && i < meshData.colors.length; i++) {
+                self.mesh.colorLayers[i] = self.dataRegion.map(Float32Array, meshData.colors[i]);
+                var buffer = new Jax.DataBuffer(GL_ARRAY_BUFFER, self.mesh.colorLayers[i], 3);
+                self.mesh.default_material.addLayer(new Jax.Material.BlenderColorLayer({dataBuffer:buffer}));
+              }
+            }
+          }
+        }
+      });
+
+      if (self.path) {
+        var xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function() {
+          if (xhr.readyState == 4) {
+            if (xhr.status == 200) { // success
+              self.data(JSON.parse(xhr.responseText));
+            } else { // error
+              self.xhrError = xhr.status+" ("+self.method+" "+self.path+" - async: "+self.async+")";
+            }
+          }
+        };
+        xhr.open(self.method, self.path, self.async);
+        xhr.send(null);
+      }
+    },
+
+    render: function($super, context, options) {
+      if (this.data)
+        $super(context, options);
+      if (this.xhrError) {
+        throw new Error("AJAX error: "+this.xhrError);
+        this.xhrError = null;
+      }
+    },
+
+    data: function(data) {
+      this.data = data;
+      this.mesh.rebuild();
+    }
+  });
+})();
+Jax.Material.BlenderColorLayer = Jax.Class.create(Jax.Material, {
+  initialize: function($super, options) {
+    options = Jax.Util.normalizeOptions(options, {
+      shader: "blender_color_layer"
+    });
+    if (!options.dataBuffer) throw new Error("Data buffer is required");
+    $super(options);
+  },
+
+  setAttributes: function($super, context, mesh, options, attributes) {
+    attributes.set('COLOR', this.dataBuffer);
+  }
+});
 var ApplicationHelper = Jax.Helper.create({
 
 });
 var HatchHelper = Jax.Helper.create({
+
+});
+var TamhatchHelper = Jax.Helper.create({
 
 });
 var ApplicationController = (function() {
@@ -180,6 +270,33 @@ var HatchController = (function() {
       });
       this.world.addLightSource(this.light);
 
+    },
+
+
+    mouse_dragged: function(event) {
+      this.teapot.camera.rotate(0.1, [event.diffy, event.diffx, 0]);
+    }
+  });
+})();
+
+var TamhatchController = (function() {
+  return Jax.Controller.create("tamhatch", ApplicationController, {
+    index: function() {
+      this.teapot =
+      this.world.addObject(BlenderModel.find("table"));
+      this.teapot.mesh.material = "tamhatch";
+
+      this.light = new Jax.Scene.LightSource({
+        type: Jax.DIRECTIONAL_LIGHT,
+        position: [5,0,-5],
+        direction: [-1,-1,-1],
+        attenuation: { linear: 0.25 }
+      });
+      this.world.addLightSource(this.light);
+
+
+     this.player.camera.setPosition([0,10,10]);
+     this.player.camera.lookAt([0,0,0]);
     },
 
 
@@ -222,6 +339,10 @@ Jax.views.push('hatch/index', function() {
     position:[0,0,-5]
   });
   self.quad.render(self.context, {fbuf:self.buf});
+});
+Jax.views.push('tamhatch/index', function() {
+  this.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  this.world.render();
 });
 Jax.Material.Tamhatch = Jax.Class.create(Jax.Material.Lighting, {
   initialize: function($super, options) {
@@ -338,6 +459,11 @@ Jax.shaders['texture'] = new Jax.Shader({  common:"uniform sampler2D Texture;\nu
   vertex:"shared attribute vec4 VERTEX_POSITION;\nshared attribute vec2 VERTEX_TEXCOORDS;\n\nshared uniform mat4 mvMatrix, pMatrix;\n\nvoid main(void) {\n  gl_Position = pMatrix * mvMatrix * VERTEX_POSITION;\n  vTexCoords = VERTEX_TEXCOORDS;\n}\n",
 exports: {},
 name: "texture"});
+Jax.shaders['blender_color_layer'] = new Jax.Shader({  common:"varying vec3 vColor;\n",
+  fragment:"void main(inout vec4 ambient, inout vec4 diffuse, inout vec4 specular) {\n  ambient.rgb  *= vColor;\n  diffuse.rgb  *= vColor;\n  specular.rgb *= vColor;\n}\n",
+  vertex:"attribute vec3 COLOR;\n\nvoid main(void) {\n  vColor = COLOR;\n}\n",
+exports: {},
+name: "blender_color_layer"});
 Jax.shaders['tamhatch'] = new Jax.Shader({  common:"// Shared variables save on graphics memory and allow you to \"piggy-back\" off of\n// variables defined in other shaders:\n\nshared uniform mat3 nMatrix;\nshared uniform mat4 mvMatrix, pMatrix;\n\nshared varying vec2 vTexCoords;\nshared varying vec3 vNormal;\nshared varying vec4 vBaseColor;\n\nvarying vec4 hatchWeight1;\t// weight for pure white (w), and hatch tecture unit 0, 1, 2\nvarying vec4 hatchWeight2;  // weight for pure black (w), and hatch texture unit 3, 4, 5\nvarying vec2 texCoord;\n\nuniform sampler2D hatch0;\nuniform sampler2D hatch1;\nuniform sampler2D hatch2;\nuniform sampler2D hatch3;\nuniform sampler2D hatch4;\nuniform sampler2D hatch5;\n\nuniform float scaleU, scaleV;\n",
   fragment:"void main(void)\n{\n  vec2 scale = vec2(scaleU, scaleV);\n  if (scaleU == 0.0) scale.x = 1.0;\n  if (scaleV == 0.0) scale.y = 1.0;\n  \n//\tvec2 texCoord = gl_TexCoord[0].xy;\n\n\tvec4 color = vec4(1, 1, 1, 1) * hatchWeight1.w;\n\tcolor     += texture2D(hatch0, texCoord*scale) * hatchWeight1.x;\n\tcolor     += texture2D(hatch1, texCoord*scale) * hatchWeight1.y;\n\tcolor     += texture2D(hatch2, texCoord*scale) * hatchWeight1.z;\n\tcolor     += texture2D(hatch3, texCoord*scale) * hatchWeight2.x;\n\tcolor     += texture2D(hatch4, texCoord*scale) * hatchWeight2.y;\n\tcolor     += texture2D(hatch5, texCoord*scale) * hatchWeight2.z;\n\n\tcolor.a = 1.0;\n\n\tgl_FragColor = color;\n}\n",
   vertex:"          #ifndef dependency_functions_lights\n          #define dependency_functions_lights\n      \n          /* see http://jax.thoughtsincomputation.com/2011/05/webgl-apps-crashing-on-windows-7/ */\n//const struct LightSource {\n//  int enabled;\n//  int type;\n//  vec3 position; // in world space\n//  vec3 direction; // in world space\n//  vec4 ambient, diffuse, specular;\n//  float constant_attenuation, linear_attenuation, quadratic_attenuation;\n//  float spotExponent, spotCosCutoff;\n//};\n\nshared uniform bool LIGHT_ENABLED;\nshared uniform int LIGHT_TYPE;\nshared uniform vec3 LIGHT_POSITION, LIGHT_DIRECTION;\nshared uniform vec4 LIGHT_AMBIENT, LIGHT_DIFFUSE, LIGHT_SPECULAR;\nshared uniform float LIGHT_ATTENUATION_CONSTANT, LIGHT_ATTENUATION_LINEAR, LIGHT_ATTENUATION_QUADRATIC,\n                     LIGHT_SPOT_EXPONENT, LIGHT_SPOT_COS_CUTOFF;\n\nfloat calcAttenuation(in vec3 ecPosition3,\n                      out vec3 lightDirection)\n{\n//  lightDirection = vec3(vnMatrix * -light.position) - ecPosition3;\n  lightDirection = vec3(ivMatrix * vec4(LIGHT_POSITION, 1.0)) - ecPosition3;\n  float d = length(lightDirection);\n  \n  return 1.0 / (LIGHT_ATTENUATION_CONSTANT + LIGHT_ATTENUATION_LINEAR * d + LIGHT_ATTENUATION_QUADRATIC * d * d);\n}\n\nvoid DirectionalLight(in vec3 normal,\n                      inout vec4 ambient,\n                      inout vec4 diffuse,\n                      inout vec4 specular)\n{\n  vec3 nLDir = normalize(vnMatrix * -normalize(LIGHT_DIRECTION));\n  vec3 halfVector = normalize(nLDir + vec3(0,0,1));\n  float pf;\n    \n  float NdotD  = max(0.0, dot(normal, nLDir));\n  float NdotHV = max(0.0, dot(normal, halfVector));\n    \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n    \n  ambient += LIGHT_AMBIENT;\n  diffuse += LIGHT_DIFFUSE * NdotD;\n  specular += LIGHT_SPECULAR * pf;\n}\n\n/* Use when attenuation != (1,0,0) */\nvoid PointLightWithAttenuation(in vec3 ecPosition3,\n                               in vec3 normal,\n                               inout vec4 ambient,\n                               inout vec4 diffuse,\n                               inout vec4 specular)\n{\n  float NdotD; // normal . light direction\n  float NdotHV;// normal . half vector\n  float pf;    // specular factor\n  float attenuation;\n  vec3 VP;     // direction from surface to light position\n  vec3 halfVector; // direction of maximum highlights\n  \n  attenuation = calcAttenuation(ecPosition3, VP);\n  VP = normalize(VP);\n  \n  halfVector = normalize(VP+vec3(0,0,1));\n  NdotD = max(0.0, dot(normal, VP));\n  NdotHV= max(0.0, dot(normal, halfVector));\n  \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n\n  ambient += LIGHT_AMBIENT * attenuation;\n  diffuse += LIGHT_DIFFUSE * NdotD * attenuation;\n  specular += LIGHT_SPECULAR * pf * attenuation;\n}\n\n/* Use for better performance when attenuation == (1,0,0) */\nvoid PointLightWithoutAttenuation(in vec3 ecPosition3,\n                                  in vec3 normal,\n                                  inout vec4 ambient,\n                                  inout vec4 diffuse,\n                                  inout vec4 specular)\n{\n  float NdotD; // normal . light direction\n  float NdotHV;// normal . half vector\n  float pf;    // specular factor\n  float d;     // distance from surface to light source\n  vec3 VP;     // direction from surface to light position\n  vec3 halfVector; // direction of maximum highlights\n  \n  VP = vec3(ivMatrix * vec4(LIGHT_POSITION, 1.0)) - ecPosition3;\n  d = length(VP);\n  VP = normalize(VP);\n  halfVector = normalize(VP+vec3(0,0,1));\n  NdotD = max(0.0, dot(normal, VP));\n  NdotHV= max(0.0, dot(normal, halfVector));\n  \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n  \n  ambient += LIGHT_AMBIENT;\n  diffuse += LIGHT_DIFFUSE * NdotD;\n  specular += LIGHT_SPECULAR * pf;\n}\n\nvoid SpotLight(in vec3 ecPosition3,\n               in vec3 normal,\n               inout vec4 ambient,\n               inout vec4 diffuse,\n               inout vec4 specular)\n{\n  float NdotD; // normal . light direction\n  float NdotHV;// normal . half vector\n  float pf;    // specular factor\n  float attenuation;\n  vec3 VP;     // direction from surface to light position\n  vec3 halfVector; // direction of maximum highlights\n  float spotDot; // cosine of angle between spotlight\n  float spotAttenuation; // spotlight attenuation factor\n  \n  attenuation = calcAttenuation(ecPosition3, VP);\n  VP = normalize(VP);\n  \n  // See if point on surface is inside cone of illumination\n  spotDot = dot(-VP, normalize(vnMatrix*LIGHT_DIRECTION));\n  if (spotDot < LIGHT_SPOT_COS_CUTOFF)\n    spotAttenuation = 0.0;\n  else spotAttenuation = pow(spotDot, LIGHT_SPOT_EXPONENT);\n  \n  attenuation *= spotAttenuation;\n  \n  halfVector = normalize(VP+vec3(0,0,1));\n  NdotD = max(0.0, dot(normal, VP));\n  NdotHV= max(0.0, dot(normal, halfVector));\n  \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n  \n  ambient += LIGHT_AMBIENT * attenuation;\n  diffuse += LIGHT_DIFFUSE * NdotD * attenuation;\n  specular += LIGHT_SPECULAR * pf * attenuation;\n}\n\n          #endif\n\n\nshared attribute vec4 VERTEX_POSITION, VERTEX_COLOR;\nshared attribute vec3 VERTEX_NORMAL;\nshared attribute vec2 VERTEX_TEXCOORDS;\n\nvoid main()\n{\n  // zero out values so we don't have undefined vectors all over the place\n  hatchWeight1 = hatchWeight2 = vec4(0);\n  texCoord = vec2(0);\n\n  texCoord = VERTEX_TEXCOORDS;\n  texCoord.t = texCoord.t * 0.5;\n\tgl_Position = pMatrix * mvMatrix * VERTEX_POSITION;\n\t\n\tvec3 normal = normalize(nMatrix * VERTEX_NORMAL);\n\tvec4 vertex = mvMatrix * VERTEX_POSITION;\n  vec3 light;\n  float att = calcAttenuation(vertex.xyz, light);\n  light = normalize(light);\n\t\n\tfloat diffuseValue = max(dot(normal, light), 0.0) * att;\n\t\n\tfloat hatchLevel = diffuseValue * 6.0;\n\t\n\tif (hatchLevel >= 6.0)\n\t{\n\t\thatchWeight1.x = 1.0;\n\t}\n\telse if (hatchLevel >= 4.0)\n\t{\n\t\thatchWeight1.x = 1.0 - (5.0 - hatchLevel);\n\t\thatchWeight1.y = 1.0 - hatchWeight1.x;\n\t}\n\telse if (hatchLevel >= 3.0)\n\t{\n\t\thatchWeight1.y = 1.0 - (4.0 - hatchLevel);\n\t\thatchWeight1.z = 1.0 - hatchWeight1.y;\n\t}\n\telse if (hatchLevel >= 2.0)\n\t{\n\t\thatchWeight1.z = 1.0 - (3.0 - hatchLevel);\n\t\thatchWeight2.x = 1.0 - hatchWeight1.z;\n\t}\n\telse if (hatchLevel >= 1.0)\n\t{\n\t\thatchWeight2.x = 1.0 - (2.0 - hatchLevel);\n\t\thatchWeight2.y = 1.0 - hatchWeight2.x;\n\t}\n\telse\n\t{\n\t\thatchWeight2.y = 1.0 - (1.0 - hatchLevel);\n\t\thatchWeight2.z = 1.0 - hatchWeight1.y;\n\t}\t\n}\n",
@@ -348,6 +474,8 @@ Jax.shaders['xhatch'] = new Jax.Shader({  common:"shared uniform mat3 nMatrix;\n
   vertex:"shared attribute vec4 VERTEX_POSITION, VERTEX_COLOR;\nshared attribute vec3 VERTEX_NORMAL;\nshared attribute vec2 VERTEX_TEXCOORDS;\n\nuniform float TIME;\n\nvoid main(void) {\n  gl_Position = pMatrix * mvMatrix * VERTEX_POSITION;\n  vTexCoords = VERTEX_TEXCOORDS;\n  vPos = VERTEX_POSITION.xyz + vec3(0,0,TIME) * 0.2;\n}\n",
 exports: {},
 name: "xhatch"});
+BlenderModel.addResources({"default":{"method":"GET","async":true},"table":{"path":"/models/table.json"}});
 Material.addResources({"tamhatch":{"ambient":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"diffuse":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"specular":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"shininess":30,"layers":[{"type":"Tamhatch"}]},"xhatch":{"ambient":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"diffuse":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"specular":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"shininess":30,"layers":[{"type":"Xhatch"}]}});
-Jax.routes.root(HatchController, "index");
+Jax.routes.root(TamhatchController, "index");
+Jax.routes.map("tamhatch/index", TamhatchController, "index");
 Jax.routes.map("hatch/index", HatchController, "index");

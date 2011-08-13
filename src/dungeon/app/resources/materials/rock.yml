@@ -52,4 +52,3 @@ layers:
     wrap_t: GL_REPEAT
     premultiply_alpha: false
     colorspace_conversion: true
-

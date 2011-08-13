@@ -157,6 +157,7 @@ var Dungeon = (function() {
   
   return Jax.Model.create({
     initialize: function($super) {
+      this.torches = [];
       $super({mesh:new DungeonMesh(this)});
     },
     
@@ -210,14 +211,58 @@ var Dungeon = (function() {
     
     addTorches: function(name, world) {
       var map = this.map;
+      var blenderTorch = BlenderModel.find("torch");
+      var mesh = blenderTorch.mesh;
+      var torchfire = this.torchfire = new Torchfire();
+      // world.addObject(torchfire);
+      
+      // var mesh = new Jax.Mesh.Sphere({radius:0.05});
       for (var y = 0; y < map.length; y++) {
         for (var x = 0; x < map[y].length; x++) {
           if (map[y][x] == "'") {
             var torch = LightSource.find(name);
-            torch.camera.setPosition(x, 0.5, y);
+            // torch.camera.setPosition(x, 0.5, y);
+            torch.original_attenuation = torch.attenuation.quadratic;
+            this.torches.push(torch);
             world.addLightSource(torch);
+            
+            // find a wall to affix the torch model to
+            var distance = 0.37;
+            var _x = x, _y = y;
+            var emitterOffset = [0, 0.325, 0];
+            if (x == 0 || map[y][x-1] == 'X') { _x -= distance; emitterOffset[0] = 0.05; } // wall left
+            else if (y == 0 || map[y-1][x] == 'X') { _y -= distance; emitterOffset[2] = 0.05; } // wall front
+            else if (x == map[y].length-1 || map[y][x+1] == 'X') { _x += distance; emitterOffset[0] = -0.05; } // wall right
+            else if (y == map.length-1 || map[y+1][x] == 'X') { _y += distance; emitterOffset[2] = -0.05; } // wall back
+            // if no wall was found, don't draw a mesh. The light will still glow,
+            // though.
+            else continue;
+            
+            var height = 0.5;
+            var torchModel = world.addObject(new Jax.Model({mesh:mesh,position:[_x, height, _y]}));
+            torchModel.camera.lookAt([x, height, y]);
+            var emitterPosition = vec3.add([_x, height, _y], emitterOffset);
+            torch.camera.setPosition(emitterPosition);
+            torchfire.addEmitter(emitterPosition);
           }
         }
+      }
+    },
+    
+    update: function(tc) {
+      for (var i = 0; i < this.torches.length; i++) {
+        var torch = this.torches[i];
+        if (!torch.targetAtten || torch.attenDirection * (torch.targetAtten - torch.attenuation.quadratic) <= Math.EPSILON) {
+          var amount = Math.random() * torch.flicker - torch.flicker / 2;
+          torch.targetAtten = torch.original_attenuation + amount;
+          torch.attenSpeed = (torch.targetAtten - torch.attenuation.quadratic) * 10;
+          torch.attenDirection = torch.attenSpeed / Math.abs(torch.attenSpeed);
+        }
+        torch.attenuation.quadratic += torch.attenSpeed * tc;
+        // deal with big tc values
+        if ((torch.attenuation.quadratic < torch.targetAtten && Math.equalish(torch.attenDirection, -1)) ||
+            (torch.attenuation.quadratic > torch.targetAtten && Math.equalish(torch.attenDirection,  1)))
+          torch.attenuation.quadratic = torch.targetAtten;
       }
     },
     
