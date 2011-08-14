@@ -164,16 +164,17 @@ var BlenderModel = (function() {
 
         init: function(vertices, colors, texCoords, normals, indices) {
           if (self.data) {
-            function push(source, dest) {
+            function push(source, dest, scale) {
+              scale = scale || 1.0;
               for (i = 0; source && i < source.length; i++)
-                dest.push(source[i]);
+                dest.push(source[i] * scale);
             }
 
             var i, j;
             for (var meshName in self.data)
             {
               var meshData = self.data[meshName];
-              push(meshData.vertices, vertices);
+              push(meshData.vertices, vertices, self.scale);
               push(meshData.indices, indices);
               push(meshData.normals, normals);
 
@@ -188,10 +189,19 @@ var BlenderModel = (function() {
 
               self.dataRegion = new Jax.DataRegion();
               self.mesh.colorLayers = [];
+              self.mesh.uvLayers = [];
               for (i = 0; meshData.colors && i < meshData.colors.length; i++) {
                 self.mesh.colorLayers[i] = self.dataRegion.map(Float32Array, meshData.colors[i]);
                 var buffer = new Jax.DataBuffer(GL_ARRAY_BUFFER, self.mesh.colorLayers[i], 3);
                 self.mesh.default_material.addLayer(new Jax.Material.BlenderColorLayer({dataBuffer:buffer}));
+
+                if (i == 0)
+                  push(meshData.colors[i], colors);
+              }
+              for (i = 0; meshData.textureCoords && i < meshData.textureCoords.length; i++) {
+
+                if (i == 0)
+                  push(meshData.textureCoords[i], texCoords);
               }
             }
           }
@@ -282,27 +292,117 @@ var HatchController = (function() {
 var TamhatchController = (function() {
   return Jax.Controller.create("tamhatch", ApplicationController, {
     index: function() {
-      this.teapot =
+      this.movement = { left: 0, right: 0, forward: 0, backward: 0 };
       this.world.addObject(BlenderModel.find("table"));
-      this.teapot.mesh.material = "tamhatch";
+      this.world.addObject(BlenderModel.find("chair1"));
+      this.world.addObject(BlenderModel.find("chair2"));
+      this.world.addObject(BlenderModel.find("fan-base"));
+      var lightBulb = this.world.addObject(BlenderModel.find("lightbulb"));
 
-      this.light = new Jax.Scene.LightSource({
-        type: Jax.DIRECTIONAL_LIGHT,
-        position: [5,0,-5],
-        direction: [-1,-1,-1],
-        attenuation: { linear: 0.25 }
-      });
-      this.world.addLightSource(this.light);
+      var plane = new Jax.Mesh.Quad({size:30,material:"tamhatch"});
+      var buf = plane.getTextureCoordsBuffer();
+      for (var i = 0; i < buf.js.length; i++)
+        buf.js[i] *= 4;
+      buf.refresh();
+      this.world.addObject(new Jax.Model({mesh:plane,position:[15,0,0],direction:[1,0,0]}));
+      this.world.addObject(new Jax.Model({mesh:plane,position:[-15,0,0],direction:[-1,0,0]}));
+      this.world.addObject(new Jax.Model({mesh:plane,position:[0,6.15,0],direction:[0,1,0]}));
+      this.world.addObject(new Jax.Model({mesh:plane,position:[0,-3,0],direction:[0,-1,0]}));
+      this.world.addObject(new Jax.Model({mesh:plane,position:[0,0,15],direction:[0,0,1]}));
+      this.world.addObject(new Jax.Model({mesh:plane,position:[0,0,-15],direction:[0,0,-1]}));
+
+      this.fanBlades = [];
+
+      var fanPos = this.fanPos = [[0, 5.55, 0.6], [0.6, 5.55, 0], [0, 5.55, -0.6], [-0.6, 5.55, 0]];
+      for (var i = 0; i < 4; i++) {
+        this.fanBlades[i] = this.world.addObject(BlenderModel.find("fan-blade"));
+        this.fanBlades[i].camera.setPosition(fanPos[i]);
+        this.fanBlades[i].camera.yaw((i-1) * Math.PI / 2);
+      }
 
 
-     this.player.camera.setPosition([0,10,10]);
-     this.player.camera.lookAt([0,0,0]);
+      this.world.addLightSource(new Jax.Scene.LightSource({
+        type: Jax.POINT_LIGHT,
+        position: lightBulb.camera.getPosition(),
+        attenuation: { linear: 0.15 }
+      }));
+
+     this.player.camera.reorient([0.95,0,1]);
+     this.player.camera.setPosition([-9,3,-10]);
+     this.player.camera.pitch(-Math.PI/32);
     },
 
+    update: function(timechange) {
+      var speed = 7;
+      this.player.camera.move((this.movement.forward+this.movement.backward)*timechange*speed);
+      this.player.camera.strafe((this.movement.left+this.movement.right)*timechange*speed);
+
+      var angle = Math.PI / 4 * timechange;
+      this._angle = (this._angle || 0) - angle;
+
+      var p = this._p = this._p || vec3.create();
+      var sx, sz;
+
+      for (var i = 0; i < 4; i++) {
+        var radius = 0.6;
+        sx = Math.cos(this._angle + ((i+1) * Math.PI/2)) * radius;
+        sz = Math.sin(this._angle + ((i+1) * Math.PI/2)) * radius;
+        if (i % 2 > 0) { sx *= -1; sz *= -1; }
+        p[0] = sx;
+        p[1] = 5.55;
+        p[2] = sz;
+        this.fanBlades[i].camera.setPosition(p);
+        this.fanBlades[i].camera.yaw(angle);
+      }
+    },
 
     mouse_dragged: function(event) {
-      this.teapot.camera.rotate(0.1, [event.diffy, event.diffx, 0]);
+      this.player.camera.yaw(-0.01 * this.context.mouse.diffx);
+      this.player.camera.pitch(0.01 * this.context.mouse.diffy);
+    },
+
+    key_pressed: function(event) {
+      switch(event.keyCode) {
+        case KeyEvent.DOM_VK_UP:
+        case KeyEvent.DOM_VK_W:
+          this.movement.forward = 1;
+          break;
+        case KeyEvent.DOM_VK_DOWN:
+        case KeyEvent.DOM_VK_S:
+          this.movement.backward = -1;
+          break;
+        case KeyEvent.DOM_VK_LEFT:
+        case KeyEvent.DOM_VK_A:
+          this.movement.left = -1;
+          break;
+        case KeyEvent.DOM_VK_RIGHT:
+        case KeyEvent.DOM_VK_D:
+          this.movement.right = 1;
+          break;
+      }
+    },
+
+    key_released: function(event) {
+      switch(event.keyCode) {
+        case KeyEvent.DOM_VK_UP:
+        case KeyEvent.DOM_VK_W:
+          this.movement.forward = 0;
+          break;
+        case KeyEvent.DOM_VK_DOWN:
+        case KeyEvent.DOM_VK_S:
+          this.movement.backward = 0;
+          break;
+        case KeyEvent.DOM_VK_LEFT:
+        case KeyEvent.DOM_VK_A:
+          this.movement.left = 0;
+          break;
+        case KeyEvent.DOM_VK_RIGHT:
+        case KeyEvent.DOM_VK_D:
+          this.movement.right = 0;
+          break;
+      }
     }
+
   });
 })();
 Jax.views.push('hatch/index', function() {
@@ -344,6 +444,43 @@ Jax.views.push('tamhatch/index', function() {
   this.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   this.world.render();
 });
+Jax.Material.Hatch = Jax.Class.create(Jax.Material, {
+  initialize: function($super, options) {
+    options = Jax.Util.normalizeOptions(options, {
+      shader: "hatch",
+
+    });
+
+    this.tam = [];
+    for (var i = 1; i <= 6; i++) {
+      this.tam.push(new Jax.Texture({
+        min_filter: GL_LINEAR,
+        mag_filter: GL_LINEAR,
+        path:"/images/tam"+i+".png"
+      }));
+    }
+    $super(options);
+  },
+
+  setUniforms: function($super, context, mesh, options, uniforms) {
+    $super(context, mesh, options, uniforms);
+
+    uniforms.set('mvMatrix', context.getModelViewMatrix());
+    uniforms.set('nMatrix', context.getNormalMatrix());
+    uniforms.set('pMatrix', context.getProjectionMatrix());
+
+    for (var i = 0; i < 6; i++) {
+      uniforms.texture('hatch'+i, this.tam[i], context);
+    }
+  },
+
+  setAttributes: function($super, context, mesh, options, attributes) {
+    attributes.set('VERTEX_POSITION',  mesh.getVertexBuffer());
+    attributes.set('VERTEX_COLOR',     mesh.getColorBuffer());
+    attributes.set('VERTEX_NORMAL',    mesh.getNormalBuffer());
+    attributes.set('VERTEX_TEXCOORDS', mesh.getTextureCoordsBuffer());
+  }
+});
 Jax.Material.Tamhatch = Jax.Class.create(Jax.Material.Lighting, {
   initialize: function($super, options) {
     options = Jax.Util.normalizeOptions(options, {
@@ -356,6 +493,8 @@ Jax.Material.Tamhatch = Jax.Class.create(Jax.Material.Lighting, {
     this.tam = [];
     for (var i = 1; i <= 6; i++) {
       this.tam.push(new Jax.Texture({
+        min_filter: GL_LINEAR,
+        mag_filter: GL_LINEAR,
         path:"/images/tam"+i+".png"
       }));
     }
@@ -464,9 +603,14 @@ Jax.shaders['blender_color_layer'] = new Jax.Shader({  common:"varying vec3 vCol
   vertex:"attribute vec3 COLOR;\n\nvoid main(void) {\n  vColor = COLOR;\n}\n",
 exports: {},
 name: "blender_color_layer"});
+Jax.shaders['hatch'] = new Jax.Shader({  common:"// Shared variables save on graphics memory and allow you to \"piggy-back\" off of\n// variables defined in other shaders:\n\nshared uniform mat3 nMatrix;\nshared uniform mat4 mvMatrix, pMatrix;\n\nshared varying vec2 vTexCoords;\nshared varying vec3 vNormal;\nshared varying vec4 vBaseColor;\n\nuniform sampler2D hatch0, hatch1, hatch2, hatch3, hatch4, hatch5;\n\n// If a variable isn't shared, it will be defined specifically for this shader.\n// If this shader is used twice in one materials, unshared variables will be\n// defined twice -- once for each use of the shader.\n\n//   uniform sampler2D Texture;\n//   uniform float TextureScaleX, TextureScaleY;\n",
+  fragment:"vec2 texCoord;\nvec3 hatchWeight1,  // weight for pure white (w), and hatch tecture unit 0, 1, 2\n     hatchWeight2;  // weight for pure black (w), and hatch texture unit 3, 4, 5\n\n\nvoid calcHatchWeights(in float hatchLevel) {\n  if (hatchLevel >= 6.0)\n  {\n  \thatchWeight1.x = 1.0;\n  }\n  else if (hatchLevel >= 4.0)\n  {\n  \thatchWeight1.x = 1.0 - (5.0 - hatchLevel);\n  \thatchWeight1.y = 1.0 - hatchWeight1.x;\n  }\n  else if (hatchLevel >= 3.0)\n  {\n  \thatchWeight1.y = 1.0 - (4.0 - hatchLevel);\n  \thatchWeight1.z = 1.0 - hatchWeight1.y;\n  }\n  else if (hatchLevel >= 2.0)\n  {\n  \thatchWeight1.z = 1.0 - (3.0 - hatchLevel);\n  \thatchWeight2.x = 1.0 - hatchWeight1.z;\n  }\n  else if (hatchLevel >= 1.0)\n  {\n  \thatchWeight2.x = 1.0 - (2.0 - hatchLevel);\n  \thatchWeight2.y = 1.0 - hatchWeight2.x;\n  }\n  else\n  {\n  \thatchWeight2.y = 1.0 - (1.0 - hatchLevel);\n  \thatchWeight2.z = 1.0 - hatchWeight1.y;\n  }\n}\n\nvoid accumHatchColor(out vec4 color) {\n  color  =\ttexture2D(hatch0, texCoord) * hatchWeight1.x;\n  color +=\ttexture2D(hatch1, texCoord) * hatchWeight1.y;\n  color +=\ttexture2D(hatch2, texCoord) * hatchWeight1.z;\n  color +=\ttexture2D(hatch3, texCoord) * hatchWeight2.x;\n  color +=\ttexture2D(hatch4, texCoord) * hatchWeight2.y;\n  color +=\ttexture2D(hatch5, texCoord) * hatchWeight2.z;\n}\n\nvoid main(inout vec4 ambient, inout vec4 diffuse, inout vec4 specular) {\n  texCoord = vec2(vTexCoords.x, vTexCoords.y * 0.5);\n  \n//  vec4 color = ambient + diffuse + specular;\n  vec4 color = ambient + diffuse;\n  float all = color.r + color.g + color.b;\n  all = clamp(all, 0.0, 3.0) / 3.0;\n  calcHatchWeights(all * 6.0);\n  accumHatchColor(color);\n  diffuse = color;\n  ambient = specular = vec4(0);\n\n\n  /*\n  calcHatchWeights((ambient.r + ambient.g + ambient.b) / 3.0 * 6.0);\n  accumHatchColor(ambient);\n\n  calcHatchWeights((diffuse.r + diffuse.g + diffuse.b) / 3.0 * 6.0);\n  accumHatchColor(diffuse);\n\n  calcHatchWeights((specular.r + specular.g + specular.b) / 3.0 * 6.0);\n  accumHatchColor(specular);\n  \n  vec4 average = (ambient + diffuse + specular) / 3.0;\n  ambient = average;\n  diffuse = specular = vec4(0);\n  */\n}\n",
+  vertex:"shared attribute vec4 VERTEX_POSITION, VERTEX_COLOR;\nshared attribute vec3 VERTEX_NORMAL;\nshared attribute vec2 VERTEX_TEXCOORDS;\n\nvoid main(void) {\n  gl_Position = pMatrix * mvMatrix * VERTEX_POSITION;\n//  vNormal = VERTEX_NORMAL;\n//  vColor = VERTEX_COLOR;\n//  vTexCoords = VERTEX_TEXCOORDS;\n}\n",
+exports: {},
+name: "hatch"});
 Jax.shaders['tamhatch'] = new Jax.Shader({  common:"// Shared variables save on graphics memory and allow you to \"piggy-back\" off of\n// variables defined in other shaders:\n\nshared uniform mat3 nMatrix;\nshared uniform mat4 mvMatrix, pMatrix;\n\nshared varying vec2 vTexCoords;\nshared varying vec3 vNormal;\nshared varying vec4 vBaseColor;\n\nvarying vec4 hatchWeight1;\t// weight for pure white (w), and hatch tecture unit 0, 1, 2\nvarying vec4 hatchWeight2;  // weight for pure black (w), and hatch texture unit 3, 4, 5\nvarying vec2 texCoord;\n\nuniform sampler2D hatch0;\nuniform sampler2D hatch1;\nuniform sampler2D hatch2;\nuniform sampler2D hatch3;\nuniform sampler2D hatch4;\nuniform sampler2D hatch5;\n\nuniform float scaleU, scaleV;\n",
   fragment:"void main(void)\n{\n  vec2 scale = vec2(scaleU, scaleV);\n  if (scaleU == 0.0) scale.x = 1.0;\n  if (scaleV == 0.0) scale.y = 1.0;\n  \n//\tvec2 texCoord = gl_TexCoord[0].xy;\n\n\tvec4 color = vec4(1, 1, 1, 1) * hatchWeight1.w;\n\tcolor     += texture2D(hatch0, texCoord*scale) * hatchWeight1.x;\n\tcolor     += texture2D(hatch1, texCoord*scale) * hatchWeight1.y;\n\tcolor     += texture2D(hatch2, texCoord*scale) * hatchWeight1.z;\n\tcolor     += texture2D(hatch3, texCoord*scale) * hatchWeight2.x;\n\tcolor     += texture2D(hatch4, texCoord*scale) * hatchWeight2.y;\n\tcolor     += texture2D(hatch5, texCoord*scale) * hatchWeight2.z;\n\n\tcolor.a = 1.0;\n\n\tgl_FragColor = color;\n}\n",
-  vertex:"          #ifndef dependency_functions_lights\n          #define dependency_functions_lights\n      \n          /* see http://jax.thoughtsincomputation.com/2011/05/webgl-apps-crashing-on-windows-7/ */\n//const struct LightSource {\n//  int enabled;\n//  int type;\n//  vec3 position; // in world space\n//  vec3 direction; // in world space\n//  vec4 ambient, diffuse, specular;\n//  float constant_attenuation, linear_attenuation, quadratic_attenuation;\n//  float spotExponent, spotCosCutoff;\n//};\n\nshared uniform bool LIGHT_ENABLED;\nshared uniform int LIGHT_TYPE;\nshared uniform vec3 LIGHT_POSITION, LIGHT_DIRECTION;\nshared uniform vec4 LIGHT_AMBIENT, LIGHT_DIFFUSE, LIGHT_SPECULAR;\nshared uniform float LIGHT_ATTENUATION_CONSTANT, LIGHT_ATTENUATION_LINEAR, LIGHT_ATTENUATION_QUADRATIC,\n                     LIGHT_SPOT_EXPONENT, LIGHT_SPOT_COS_CUTOFF;\n\nfloat calcAttenuation(in vec3 ecPosition3,\n                      out vec3 lightDirection)\n{\n//  lightDirection = vec3(vnMatrix * -light.position) - ecPosition3;\n  lightDirection = vec3(ivMatrix * vec4(LIGHT_POSITION, 1.0)) - ecPosition3;\n  float d = length(lightDirection);\n  \n  return 1.0 / (LIGHT_ATTENUATION_CONSTANT + LIGHT_ATTENUATION_LINEAR * d + LIGHT_ATTENUATION_QUADRATIC * d * d);\n}\n\nvoid DirectionalLight(in vec3 normal,\n                      inout vec4 ambient,\n                      inout vec4 diffuse,\n                      inout vec4 specular)\n{\n  vec3 nLDir = normalize(vnMatrix * -normalize(LIGHT_DIRECTION));\n  vec3 halfVector = normalize(nLDir + vec3(0,0,1));\n  float pf;\n    \n  float NdotD  = max(0.0, dot(normal, nLDir));\n  float NdotHV = max(0.0, dot(normal, halfVector));\n    \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n    \n  ambient += LIGHT_AMBIENT;\n  diffuse += LIGHT_DIFFUSE * NdotD;\n  specular += LIGHT_SPECULAR * pf;\n}\n\n/* Use when attenuation != (1,0,0) */\nvoid PointLightWithAttenuation(in vec3 ecPosition3,\n                               in vec3 normal,\n                               inout vec4 ambient,\n                               inout vec4 diffuse,\n                               inout vec4 specular)\n{\n  float NdotD; // normal . light direction\n  float NdotHV;// normal . half vector\n  float pf;    // specular factor\n  float attenuation;\n  vec3 VP;     // direction from surface to light position\n  vec3 halfVector; // direction of maximum highlights\n  \n  attenuation = calcAttenuation(ecPosition3, VP);\n  VP = normalize(VP);\n  \n  halfVector = normalize(VP+vec3(0,0,1));\n  NdotD = max(0.0, dot(normal, VP));\n  NdotHV= max(0.0, dot(normal, halfVector));\n  \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n\n  ambient += LIGHT_AMBIENT * attenuation;\n  diffuse += LIGHT_DIFFUSE * NdotD * attenuation;\n  specular += LIGHT_SPECULAR * pf * attenuation;\n}\n\n/* Use for better performance when attenuation == (1,0,0) */\nvoid PointLightWithoutAttenuation(in vec3 ecPosition3,\n                                  in vec3 normal,\n                                  inout vec4 ambient,\n                                  inout vec4 diffuse,\n                                  inout vec4 specular)\n{\n  float NdotD; // normal . light direction\n  float NdotHV;// normal . half vector\n  float pf;    // specular factor\n  float d;     // distance from surface to light source\n  vec3 VP;     // direction from surface to light position\n  vec3 halfVector; // direction of maximum highlights\n  \n  VP = vec3(ivMatrix * vec4(LIGHT_POSITION, 1.0)) - ecPosition3;\n  d = length(VP);\n  VP = normalize(VP);\n  halfVector = normalize(VP+vec3(0,0,1));\n  NdotD = max(0.0, dot(normal, VP));\n  NdotHV= max(0.0, dot(normal, halfVector));\n  \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n  \n  ambient += LIGHT_AMBIENT;\n  diffuse += LIGHT_DIFFUSE * NdotD;\n  specular += LIGHT_SPECULAR * pf;\n}\n\nvoid SpotLight(in vec3 ecPosition3,\n               in vec3 normal,\n               inout vec4 ambient,\n               inout vec4 diffuse,\n               inout vec4 specular)\n{\n  float NdotD; // normal . light direction\n  float NdotHV;// normal . half vector\n  float pf;    // specular factor\n  float attenuation;\n  vec3 VP;     // direction from surface to light position\n  vec3 halfVector; // direction of maximum highlights\n  float spotDot; // cosine of angle between spotlight\n  float spotAttenuation; // spotlight attenuation factor\n  \n  attenuation = calcAttenuation(ecPosition3, VP);\n  VP = normalize(VP);\n  \n  // See if point on surface is inside cone of illumination\n  spotDot = dot(-VP, normalize(vnMatrix*LIGHT_DIRECTION));\n  if (spotDot < LIGHT_SPOT_COS_CUTOFF)\n    spotAttenuation = 0.0;\n  else spotAttenuation = pow(spotDot, LIGHT_SPOT_EXPONENT);\n  \n  attenuation *= spotAttenuation;\n  \n  halfVector = normalize(VP+vec3(0,0,1));\n  NdotD = max(0.0, dot(normal, VP));\n  NdotHV= max(0.0, dot(normal, halfVector));\n  \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n  \n  ambient += LIGHT_AMBIENT * attenuation;\n  diffuse += LIGHT_DIFFUSE * NdotD * attenuation;\n  specular += LIGHT_SPECULAR * pf * attenuation;\n}\n\n          #endif\n\n\nshared attribute vec4 VERTEX_POSITION, VERTEX_COLOR;\nshared attribute vec3 VERTEX_NORMAL;\nshared attribute vec2 VERTEX_TEXCOORDS;\n\nvoid main()\n{\n  // zero out values so we don't have undefined vectors all over the place\n  hatchWeight1 = hatchWeight2 = vec4(0);\n  texCoord = vec2(0);\n\n  texCoord = VERTEX_TEXCOORDS;\n  texCoord.t = texCoord.t * 0.5;\n\tgl_Position = pMatrix * mvMatrix * VERTEX_POSITION;\n\t\n\tvec3 normal = normalize(nMatrix * VERTEX_NORMAL);\n\tvec4 vertex = mvMatrix * VERTEX_POSITION;\n  vec3 light;\n  float att = calcAttenuation(vertex.xyz, light);\n  light = normalize(light);\n\t\n\tfloat diffuseValue = max(dot(normal, light), 0.0) * att;\n\t\n\tfloat hatchLevel = diffuseValue * 6.0;\n\t\n\tif (hatchLevel >= 6.0)\n\t{\n\t\thatchWeight1.x = 1.0;\n\t}\n\telse if (hatchLevel >= 4.0)\n\t{\n\t\thatchWeight1.x = 1.0 - (5.0 - hatchLevel);\n\t\thatchWeight1.y = 1.0 - hatchWeight1.x;\n\t}\n\telse if (hatchLevel >= 3.0)\n\t{\n\t\thatchWeight1.y = 1.0 - (4.0 - hatchLevel);\n\t\thatchWeight1.z = 1.0 - hatchWeight1.y;\n\t}\n\telse if (hatchLevel >= 2.0)\n\t{\n\t\thatchWeight1.z = 1.0 - (3.0 - hatchLevel);\n\t\thatchWeight2.x = 1.0 - hatchWeight1.z;\n\t}\n\telse if (hatchLevel >= 1.0)\n\t{\n\t\thatchWeight2.x = 1.0 - (2.0 - hatchLevel);\n\t\thatchWeight2.y = 1.0 - hatchWeight2.x;\n\t}\n\telse\n\t{\n\t\thatchWeight2.y = 1.0 - (1.0 - hatchLevel);\n\t\thatchWeight2.z = 1.0 - hatchWeight1.y;\n\t}\t\n}\n",
+  vertex:"          #ifndef dependency_functions_lights\n          #define dependency_functions_lights\n      \n          /* see http://jax.thoughtsincomputation.com/2011/05/webgl-apps-crashing-on-windows-7/ */\n//const struct LightSource {\n//  int enabled;\n//  int type;\n//  vec3 position; // in world space\n//  vec3 direction; // in world space\n//  vec4 ambient, diffuse, specular;\n//  float constant_attenuation, linear_attenuation, quadratic_attenuation;\n//  float spotExponent, spotCosCutoff;\n//};\n\nshared uniform bool LIGHT_ENABLED;\nshared uniform int LIGHT_TYPE;\nshared uniform vec3 LIGHT_POSITION, LIGHT_DIRECTION;\nshared uniform vec4 LIGHT_AMBIENT, LIGHT_DIFFUSE, LIGHT_SPECULAR;\nshared uniform float LIGHT_ATTENUATION_CONSTANT, LIGHT_ATTENUATION_LINEAR, LIGHT_ATTENUATION_QUADRATIC,\n                     LIGHT_SPOT_EXPONENT, LIGHT_SPOT_COS_CUTOFF;\n\nfloat calcAttenuation(in vec3 ecPosition3,\n                      out vec3 lightDirection)\n{\n//  lightDirection = vec3(vnMatrix * -light.position) - ecPosition3;\n  lightDirection = vec3(ivMatrix * vec4(LIGHT_POSITION, 1.0)) - ecPosition3;\n  float d = length(lightDirection);\n  \n  return 1.0 / (LIGHT_ATTENUATION_CONSTANT + LIGHT_ATTENUATION_LINEAR * d + LIGHT_ATTENUATION_QUADRATIC * d * d);\n}\n\nvoid DirectionalLight(in vec3 normal,\n                      inout vec4 ambient,\n                      inout vec4 diffuse,\n                      inout vec4 specular)\n{\n  vec3 nLDir = normalize(vnMatrix * -normalize(LIGHT_DIRECTION));\n  vec3 halfVector = normalize(nLDir + vec3(0,0,1));\n  float pf;\n    \n  float NdotD  = max(0.0, dot(normal, nLDir));\n  float NdotHV = max(0.0, dot(normal, halfVector));\n    \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n    \n  ambient += LIGHT_AMBIENT;\n  diffuse += LIGHT_DIFFUSE * NdotD;\n  specular += LIGHT_SPECULAR * pf;\n}\n\n/* Use when attenuation != (1,0,0) */\nvoid PointLightWithAttenuation(in vec3 ecPosition3,\n                               in vec3 normal,\n                               inout vec4 ambient,\n                               inout vec4 diffuse,\n                               inout vec4 specular)\n{\n  float NdotD; // normal . light direction\n  float NdotHV;// normal . half vector\n  float pf;    // specular factor\n  float attenuation;\n  vec3 VP;     // direction from surface to light position\n  vec3 halfVector; // direction of maximum highlights\n  \n  attenuation = calcAttenuation(ecPosition3, VP);\n  VP = normalize(VP);\n  \n  halfVector = normalize(VP+vec3(0,0,1));\n  NdotD = max(0.0, dot(normal, VP));\n  NdotHV= max(0.0, dot(normal, halfVector));\n  \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n\n  ambient += LIGHT_AMBIENT * attenuation;\n  diffuse += LIGHT_DIFFUSE * NdotD * attenuation;\n  specular += LIGHT_SPECULAR * pf * attenuation;\n}\n\n/* Use for better performance when attenuation == (1,0,0) */\nvoid PointLightWithoutAttenuation(in vec3 ecPosition3,\n                                  in vec3 normal,\n                                  inout vec4 ambient,\n                                  inout vec4 diffuse,\n                                  inout vec4 specular)\n{\n  float NdotD; // normal . light direction\n  float NdotHV;// normal . half vector\n  float pf;    // specular factor\n  float d;     // distance from surface to light source\n  vec3 VP;     // direction from surface to light position\n  vec3 halfVector; // direction of maximum highlights\n  \n  VP = vec3(ivMatrix * vec4(LIGHT_POSITION, 1.0)) - ecPosition3;\n  d = length(VP);\n  VP = normalize(VP);\n  halfVector = normalize(VP+vec3(0,0,1));\n  NdotD = max(0.0, dot(normal, VP));\n  NdotHV= max(0.0, dot(normal, halfVector));\n  \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n  \n  ambient += LIGHT_AMBIENT;\n  diffuse += LIGHT_DIFFUSE * NdotD;\n  specular += LIGHT_SPECULAR * pf;\n}\n\nvoid SpotLight(in vec3 ecPosition3,\n               in vec3 normal,\n               inout vec4 ambient,\n               inout vec4 diffuse,\n               inout vec4 specular)\n{\n  float NdotD; // normal . light direction\n  float NdotHV;// normal . half vector\n  float pf;    // specular factor\n  float attenuation;\n  vec3 VP;     // direction from surface to light position\n  vec3 halfVector; // direction of maximum highlights\n  float spotDot; // cosine of angle between spotlight\n  float spotAttenuation; // spotlight attenuation factor\n  \n  attenuation = calcAttenuation(ecPosition3, VP);\n  VP = normalize(VP);\n  \n  // See if point on surface is inside cone of illumination\n  spotDot = dot(-VP, normalize(vnMatrix*LIGHT_DIRECTION));\n  if (spotDot < LIGHT_SPOT_COS_CUTOFF)\n    spotAttenuation = 0.0;\n  else spotAttenuation = pow(spotDot, LIGHT_SPOT_EXPONENT);\n  \n  attenuation *= spotAttenuation;\n  \n  halfVector = normalize(VP+vec3(0,0,1));\n  NdotD = max(0.0, dot(normal, VP));\n  NdotHV= max(0.0, dot(normal, halfVector));\n  \n  if (NdotD == 0.0) pf = 0.0;\n  else pf = pow(NdotHV, materialShininess);\n  \n  ambient += LIGHT_AMBIENT * attenuation;\n  diffuse += LIGHT_DIFFUSE * NdotD * attenuation;\n  specular += LIGHT_SPECULAR * pf * attenuation;\n}\n\n          #endif\n\n\nshared attribute vec4 VERTEX_POSITION, VERTEX_COLOR;\nshared attribute vec3 VERTEX_NORMAL;\nshared attribute vec2 VERTEX_TEXCOORDS;\n\nvoid main()\n{\n  // zero out values so we don't have undefined vectors all over the place\n  hatchWeight1 = hatchWeight2 = vec4(0);\n  texCoord = vec2(0);\n\n  texCoord = VERTEX_TEXCOORDS;\n  texCoord.t = texCoord.t * 0.5;\n\tgl_Position = pMatrix * mvMatrix * VERTEX_POSITION;\n\t\n\tvec3 normal = normalize(nMatrix * VERTEX_NORMAL);\n\tvec4 vertex = mvMatrix * VERTEX_POSITION;\n  vec3 light;\n  float att = calcAttenuation(vertex.xyz, light);\n  light = normalize(light);\n\t\n\tfloat diffuseValue = max(dot(normal, light), 0.0);// * att;\n\t\n\tfloat hatchLevel = diffuseValue * 6.0;\n\t\n\tif (hatchLevel >= 6.0)\n\t{\n\t\thatchWeight1.x = 1.0;\n\t}\n\telse if (hatchLevel >= 4.0)\n\t{\n\t\thatchWeight1.x = 1.0 - (5.0 - hatchLevel);\n\t\thatchWeight1.y = 1.0 - hatchWeight1.x;\n\t}\n\telse if (hatchLevel >= 3.0)\n\t{\n\t\thatchWeight1.y = 1.0 - (4.0 - hatchLevel);\n\t\thatchWeight1.z = 1.0 - hatchWeight1.y;\n\t}\n\telse if (hatchLevel >= 2.0)\n\t{\n\t\thatchWeight1.z = 1.0 - (3.0 - hatchLevel);\n\t\thatchWeight2.x = 1.0 - hatchWeight1.z;\n\t}\n\telse if (hatchLevel >= 1.0)\n\t{\n\t\thatchWeight2.x = 1.0 - (2.0 - hatchLevel);\n\t\thatchWeight2.y = 1.0 - hatchWeight2.x;\n\t}\n\telse\n\t{\n\t\thatchWeight2.y = 1.0 - (1.0 - hatchLevel);\n\t\thatchWeight2.z = 1.0 - hatchWeight1.y;\n\t}\t\n}\n",
 exports: {},
 name: "tamhatch"});
 Jax.shaders['xhatch'] = new Jax.Shader({  common:"shared uniform mat3 nMatrix;\nshared uniform mat4 mvMatrix, pMatrix;\n\nshared varying vec2 vTexCoords;\nshared varying vec3 vNormal;\nshared varying vec4 vBaseColor;\n\nuniform sampler2D sceneTex;\n\n/* should be uniforms */\nconst float vx_offset = 1.0;\nconst float hatch_y_offset = 5.0;\nconst float lum_threshold_1 = 0.8;\nconst float lum_threshold_2 = 0.65;\nconst float lum_threshold_3 = 0.25;\nconst float lum_threshold_4 = 0.01;\n\nvarying vec3 vPos;\n",
@@ -474,8 +618,8 @@ Jax.shaders['xhatch'] = new Jax.Shader({  common:"shared uniform mat3 nMatrix;\n
   vertex:"shared attribute vec4 VERTEX_POSITION, VERTEX_COLOR;\nshared attribute vec3 VERTEX_NORMAL;\nshared attribute vec2 VERTEX_TEXCOORDS;\n\nuniform float TIME;\n\nvoid main(void) {\n  gl_Position = pMatrix * mvMatrix * VERTEX_POSITION;\n  vTexCoords = VERTEX_TEXCOORDS;\n  vPos = VERTEX_POSITION.xyz + vec3(0,0,TIME) * 0.2;\n}\n",
 exports: {},
 name: "xhatch"});
-BlenderModel.addResources({"default":{"method":"GET","async":true},"table":{"path":"/models/table.json"}});
-Material.addResources({"tamhatch":{"ambient":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"diffuse":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"specular":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"shininess":30,"layers":[{"type":"Tamhatch"}]},"xhatch":{"ambient":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"diffuse":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"specular":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"shininess":30,"layers":[{"type":"Xhatch"}]}});
+BlenderModel.addResources({"default":{"method":"GET","async":true},"chair1":{"path":"/models/chair.json","material":"tamhatch","position":"0, -1.25, -4"},"chair2":{"path":"/models/chair.json","material":"tamhatch","position":"0, -1.25, 4","direction":"-0.5, 0, 1"},"fan-base":{"path":"/models/ceiling-fan-base.json","material":"tamhatch","position":"0, 6.15, 0"},"fan-blade":{"path":"/models/ceiling-fan-blade.json","material":"tamhatch","position":"0.65, 5.55, 0","direction":"0, -1, 0"},"lightbulb":{"path":"/models/light-bulb.json","lit":false,"shadow_caster":false,"position":"0, 5, 0","direction":"0, -1, 0","scale":0.25},"table":{"path":"/models/table.json","material":"tamhatch"}});
+Material.addResources({"tamhatch":{"ambient":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"diffuse":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"specular":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"shininess":30,"layers":[{"type":"Lighting"},{"type":"Hatch"}]},"xhatch":{"ambient":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"diffuse":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"specular":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"shininess":30,"layers":[{"type":"Xhatch"}]}});
 Jax.routes.root(TamhatchController, "index");
 Jax.routes.map("tamhatch/index", TamhatchController, "index");
 Jax.routes.map("hatch/index", HatchController, "index");

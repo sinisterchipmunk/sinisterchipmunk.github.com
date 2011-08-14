@@ -19,7 +19,7 @@
       var demos = [
         {
           name:"dungeon",
-          screenshot: 'dungeon.png',
+          screenshot: 'dungeon3.png',
           source:"http://github.com/sinisterchipmunk/sinisterchipmunk.github.com/tree/master/src/dungeon",
           desc:
             "A maze-like dungeon from a first-person perspective. Demonstrates advanced lighting effects with "+
@@ -69,6 +69,19 @@
             "texture is generated on the fragment shader, also using Perlin noise. There are three light "+
             "sources that rotate around the blob. The blob itself is just a flat mesh, a square grid of "+
             "vertices passed into a variation of the sphere function on the vertex shader."
+        },
+        {
+          name:"hatching",
+          filename:"hatch",
+          screenshot: 'hatch.png',
+          source:"http://github.com/sinisterchipmunk/sinisterchipmunk.github.com/tree/master/src/hatch",
+          desc:
+            "A basic implementation of \"hatching\", which is a non-photorealistic rendering technique that makes "+
+            "scenes appear to have been drawn by an artist using the <a href='http://en.wikipedia.org/wiki/Hatching'>artistic technique of the same name</a>. " +
+            "Hatching is performed in the shader by sampling a number of textures (up to 6 in this implementation) "+
+            "based upon the expected brightness of the pixel; brighter pixels select textures with fewer black "+
+            "streaks in them. This scene uses a single stationary light source to illuminate the furniture, " +
+            "demonstrating the effect on lighter pixels."
         }
       ];
     </script>

@@ -1,13 +1,11 @@
-Jax.Material.Tamhatch = Jax.Class.create(Jax.Material.Lighting, {
+Jax.Material.Hatch = Jax.Class.create(Jax.Material, {
   initialize: function($super, options) {
     options = Jax.Util.normalizeOptions(options, {
-      shader: "tamhatch",
+      shader: "hatch",
 
       // You can specify default options (see +manifest.yml+) here.
     });
 
-    $super(options);
-    this.shader = "tamhatch";
     this.tam = [];
     for (var i = 1; i <= 6; i++) {
       this.tam.push(new Jax.Texture({
@@ -16,6 +14,7 @@ Jax.Material.Tamhatch = Jax.Class.create(Jax.Material.Lighting, {
         path:"/images/tam"+i+".png"
       }));
     }
+    $super(options);
   },
   
   setUniforms: function($super, context, mesh, options, uniforms) {

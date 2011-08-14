@@ -20,7 +20,7 @@ void main()
   float att = calcAttenuation(vertex.xyz, light);
   light = normalize(light);
 	
-	float diffuseValue = max(dot(normal, light), 0.0) * att;
+	float diffuseValue = max(dot(normal, light), 0.0);// * att;
 	
 	float hatchLevel = diffuseValue * 6.0;
 	
