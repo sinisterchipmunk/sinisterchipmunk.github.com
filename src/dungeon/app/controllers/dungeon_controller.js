@@ -30,14 +30,14 @@ var material;
       // this.player.bsp = new BSP();
       // Mesh used for testing player collision vs wall. Sphere/cube tests aren't
       // yet implemented so we have to use a collision mesh.
-      // this.player.bsp.addMesh(new Jax.Mesh.Sphere());
+      // this.player.bsp.addMesh(new Jax.Mesh.Sphere({radius:0.25,slices:4,stacks:4}));
       
       material = Jax.Material.find("rock");
       this.movement = { left: 0, right: 0, forward: 0, backward: 0 };
       
       this.dungeon = new Dungeon();
-      // this.dungeon.bsp = new BSP();
-      // this.dungeon.bsp.addMesh(new Jax.Mesh.Sphere());
+      this.dungeon.bsp = new BSP();
+      this.dungeon.bsp.addMesh(this.dungeon.mesh);
       var torch = this.world.addObject(BlenderModel.find("torch"));
       torch.camera.setPosition([0,0,-5]);
 
@@ -47,7 +47,7 @@ var material;
       this.world.addObject(this.dungeon);
       this.dungeon.addTorches("torch", this.world);
       
-      // this.dungeon.bsp.finalize();
+      this.dungeon.bsp.finalize();
       // this.player.bsp.finalize();
       
       // use a different light from 'torch' simply so we can tweak it separately from the wall torches.
@@ -57,14 +57,15 @@ var material;
     update: function(timechange) {
       var speed = 1.5;
       
-      // var previousPosition = this.player.camera.getPosition();
+      // HACK - TODO camera should be able to return where it will be moving to, without applying the changes
+      var previousPosition = this.player.camera.getPosition();
       this.player.camera.move((this.movement.forward+this.movement.backward)*timechange*speed);
       this.player.camera.strafe((this.movement.left+this.movement.right)*timechange*speed);
       var pos = this.player.camera.getPosition();
+      this.player.camera.setPosition(previousPosition);
       
       // keep the player from being able to fly
       pos[1] = 0.3;
-      this.player.camera.setPosition(pos);
       
       var torchDistance = null, buf = vec3.create();
       for (var i = 0; i < this.dungeon.torches.length; i++) {
@@ -80,20 +81,44 @@ var material;
         this.snd2.volume = volume;
       }
       
-      // 
-      // var newpos = this.player.camera.getPosition();
-      // this.player.camera.setPosition(this.dungeon.walk(previousPosition, newpos));
+      // check player collision vs dungeon walls; don't move unless it's clear
+      var collision;
+      // intersect ray with plane -- TODO add to Jax core
+      function intersectRayPlane(origin, direction, pOrigin, pNormal) {
+        var d = -vec3.dot(pNormal, pOrigin);
+        var numer = vec3.dot(pNormal, origin) + d;
+        var denom = vec3.dot(pNormal, direction);
 
-      // var collision;
-      // var mat = this.mat = this.mat || mat4.create();
-      // mat4.inverse(this.dungeon.camera.getTransformationMatrix(), mat);
-      // mat4.multiply(mat, this.player.camera.getTransformationMatrix(), mat);
-      // 
-      // if (collision = this.player.bsp.collide(this.dungeon.bsp, mat)) {
-      //   document.getElementById("jax_banner").innerHTML = "Collide!";
-      // } else {
-      //   document.getElementById("jax_banner").innerHTML = "No collide";
-      // }
+        if (denom == 0)  // normal is orthogonal to vector, can't intersect
+         return (-1.0);
+        return -(numer / denom);
+      }
+
+      var self = this;
+      var xform = self.player.camera.getTransformationMatrix();
+      var newpos;
+      function move() {
+        if (collision = self.dungeon.bsp.collideSphere(pos, 0.35)) {
+          // calculate sliding plane so user can slide along wall
+          var spOrigin = collision.collisionPoint;
+          var spNormal = vec3.normalize(vec3.subtract(pos, spOrigin, vec3.create()));
+          var l = intersectRayPlane(pos, spNormal, spOrigin, spNormal);
+          
+          newpos = vec3.create();
+          vec3.scale(spNormal, collision.penetration + (Math.EPSILON*2), pos);
+          vec3.add(spOrigin, pos, pos);
+          
+          newpos[0] = pos[0] - l * spNormal[0];
+          newpos[1] = pos[1] - l * spNormal[1];
+          newpos[2] = pos[2] - l * spNormal[2];
+          
+          pos = newpos;
+          pos[1] = 0.3;
+          return move();
+        }
+        return pos;
+      }
+      self.player.camera.setPosition(move());
       
       if (window.lantern)
         window.lantern.camera.setPosition(vec3.add(this.player.camera.getPosition(), vec3.scale(this.player.camera.getViewVector(), 0.1)));
