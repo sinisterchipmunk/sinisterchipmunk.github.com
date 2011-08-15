@@ -1,0 +1,4 @@
+--- !map:Jax::Plugin::Manifest 
+name: blender_models
+description: "a Jax plugin adding support for models built in Blender. Includes model importers and exporters for Blender."
+version: 0.0.1

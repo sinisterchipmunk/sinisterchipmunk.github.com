@@ -1,0 +1,4 @@
+--- !map:Jax::Plugin::Manifest 
+name: coldet
+description: "A fast collision detection library for Jax"
+version: 0.0.2
