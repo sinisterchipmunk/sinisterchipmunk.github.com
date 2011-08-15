@@ -24,5 +24,7 @@ shininess: 30
 layers:
   - type: Lighting
   - type: Hatch
+    scaleU: 2
+    scaleV: 2
 
 

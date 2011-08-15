@@ -1,3 +1,5 @@
+uniform float scaleU, scaleV;
+
 vec2 texCoord;
 vec3 hatchWeight1,  // weight for pure white (w), and hatch tecture unit 0, 1, 2
      hatchWeight2;  // weight for pure black (w), and hatch texture unit 3, 4, 5
@@ -45,9 +47,8 @@ void accumHatchColor(out vec4 color) {
 }
 
 void main(inout vec4 ambient, inout vec4 diffuse, inout vec4 specular) {
-  texCoord = vec2(vTexCoords.x, vTexCoords.y * 0.5);
+  texCoord = vec2(vTexCoords.x * scaleU, vTexCoords.y * scaleV * 0.5);
   
-//  vec4 color = ambient + diffuse + specular;
   vec4 color = ambient + diffuse;
   float all = color.r + color.g + color.b;
   all = clamp(all, 0.0, 3.0) / 3.0;
@@ -55,20 +56,4 @@ void main(inout vec4 ambient, inout vec4 diffuse, inout vec4 specular) {
   accumHatchColor(color);
   diffuse = color;
   ambient = specular = vec4(0);
-
-
-  /*
-  calcHatchWeights((ambient.r + ambient.g + ambient.b) / 3.0 * 6.0);
-  accumHatchColor(ambient);
-
-  calcHatchWeights((diffuse.r + diffuse.g + diffuse.b) / 3.0 * 6.0);
-  accumHatchColor(diffuse);
-
-  calcHatchWeights((specular.r + specular.g + specular.b) / 3.0 * 6.0);
-  accumHatchColor(specular);
-  
-  vec4 average = (ambient + diffuse + specular) / 3.0;
-  ambient = average;
-  diffuse = specular = vec4(0);
-  */
 }

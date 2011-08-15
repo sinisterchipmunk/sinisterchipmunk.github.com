@@ -2,8 +2,8 @@ Jax.Material.Hatch = Jax.Class.create(Jax.Material, {
   initialize: function($super, options) {
     options = Jax.Util.normalizeOptions(options, {
       shader: "hatch",
-
-      // You can specify default options (see +manifest.yml+) here.
+      scaleU: 1,
+      scaleV: 1
     });
 
     this.tam = [];
@@ -23,6 +23,9 @@ Jax.Material.Hatch = Jax.Class.create(Jax.Material, {
     uniforms.set('mvMatrix', context.getModelViewMatrix());
     uniforms.set('nMatrix', context.getNormalMatrix());
     uniforms.set('pMatrix', context.getProjectionMatrix());
+    
+    uniforms.set('scaleU', this.scaleU);
+    uniforms.set('scaleV', this.scaleV);
 
     for (var i = 0; i < 6; i++) {
       uniforms.texture('hatch'+i, this.tam[i], context);
