@@ -173,8 +173,7 @@ var Dungeon = (function() {
       var map = this.map;
       var blenderTorch = BlenderModel.find("torch");
       var mesh = blenderTorch.mesh;
-      var torchfire = this.torchfire || new Torchfire();
-      var torches = [];
+      var torchfire = this.torchfire = new Torchfire();
       // world.addObject(torchfire);
       
       // var mesh = new Jax.Mesh.Sphere({radius:0.05});
@@ -184,7 +183,7 @@ var Dungeon = (function() {
             var torch = LightSource.find(name);
             // torch.camera.setPosition(x, 0.5, y);
             torch.original_attenuation = torch.attenuation.quadratic;
-            torches.push(torch);
+            this.torches.push(torch);
             world.addLightSource(torch);
             
             // find a wall to affix the torch model to
@@ -204,14 +203,14 @@ var Dungeon = (function() {
             torchModel.camera.lookAt([x, height, y]);
             var emitterPosition = vec3.add([_x, height, _y], emitterOffset);
             torch.camera.setPosition(emitterPosition);
-            if (!this.torchfire)
+            // if (!this.torchfire)
               torchfire.addEmitter(emitterPosition);
           }
         }
       }
       
-      this.torches = torches;
-      this.torchfire = torchfire;
+      // this.torches = torches;
+      // this.torchfire = torchfire;
     },
     
     update: function(tc) {

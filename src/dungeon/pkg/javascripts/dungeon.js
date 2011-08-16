@@ -1205,15 +1205,14 @@ var Dungeon = (function() {
       var map = this.map;
       var blenderTorch = BlenderModel.find("torch");
       var mesh = blenderTorch.mesh;
-      var torchfire = this.torchfire || new Torchfire();
-      var torches = [];
+      var torchfire = this.torchfire = new Torchfire();
 
       for (var y = 0; y < map.length; y++) {
         for (var x = 0; x < map[y].length; x++) {
           if (map[y][x] == "'") {
             var torch = LightSource.find(name);
             torch.original_attenuation = torch.attenuation.quadratic;
-            torches.push(torch);
+            this.torches.push(torch);
             world.addLightSource(torch);
 
             var distance = 0.37;
@@ -1230,14 +1229,11 @@ var Dungeon = (function() {
             torchModel.camera.lookAt([x, height, y]);
             var emitterPosition = vec3.add([_x, height, _y], emitterOffset);
             torch.camera.setPosition(emitterPosition);
-            if (!this.torchfire)
               torchfire.addEmitter(emitterPosition);
           }
         }
       }
 
-      this.torches = torches;
-      this.torchfire = torchfire;
     },
 
     update: function(tc) {
@@ -1668,10 +1664,12 @@ Jax.views.push('chamber/index', function() {
 Jax.views.push('dungeon/from_chamber', function() {
   this.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   this.world.render();
+  this.context.current_controller.dungeon.torchfire.render(this.context);
 });
 Jax.views.push('dungeon/index', function() {
   this.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   this.world.render();
+  this.context.current_controller.dungeon.torchfire.render(this.context);
 });
 Jax.views.push('particles_test/index', function() {
   this.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
