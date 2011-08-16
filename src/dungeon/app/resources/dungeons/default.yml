@@ -8,8 +8,8 @@ map:
   - XXXXXXXXXXXXXXXXXXXXXX
   - X'     '     '     ' X
   - X XXXXXXXXXXXXXXXXXX X
-  - X XXXX'     '     'X'X
-  - X'     XXXXXXXXXXXXX X
+  - X XXXX'     '     'X X
+  - X'     XXXXXXXXXXXXX'X
   - XXXXXXXXXXXXXXXXXXXXXX
 
 player_start:

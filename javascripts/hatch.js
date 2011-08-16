@@ -159,13 +159,16 @@ var BlenderModel = (function() {
   return Jax.Model.create({
     after_initialize: function() {
       var self = this;
+      if (self.color) self.color = Jax.Util.colorize(self.color);
       self.mesh = new Jax.Mesh({
         material: self.material,
+        color: self.color,
+        lit: self.lit,
 
         init: function(vertices, colors, texCoords, normals, indices) {
           if (self.data) {
             function push(source, dest, scale) {
-              scale = scale || 1.0;
+              if (!scale) scale = 1.0;
               for (i = 0; source && i < source.length; i++)
                 dest.push(source[i] * scale);
             }
@@ -225,6 +228,8 @@ var BlenderModel = (function() {
     },
 
     render: function($super, context, options) {
+      if (typeof(this.unlit) != "undefined")
+        options = Jax.Util.normalizeOptions(options, {unlit:this.unlit});
       if (this.data)
         $super(context, options);
       if (this.xhrError) {
@@ -622,7 +627,7 @@ Jax.shaders['xhatch'] = new Jax.Shader({  common:"shared uniform mat3 nMatrix;\n
   vertex:"shared attribute vec4 VERTEX_POSITION, VERTEX_COLOR;\nshared attribute vec3 VERTEX_NORMAL;\nshared attribute vec2 VERTEX_TEXCOORDS;\n\nuniform float TIME;\n\nvoid main(void) {\n  gl_Position = pMatrix * mvMatrix * VERTEX_POSITION;\n  vTexCoords = VERTEX_TEXCOORDS;\n  vPos = VERTEX_POSITION.xyz + vec3(0,0,TIME) * 0.2;\n}\n",
 exports: {},
 name: "xhatch"});
-BlenderModel.addResources({"default":{"method":"GET","async":true},"chair1":{"path":"/models/chair.json","material":"tamhatch","position":"0, -1.25, -4"},"chair2":{"path":"/models/chair.json","material":"tamhatch","position":"0, -1.25, 4","direction":"-0.5, 0, 1"},"fan-base":{"path":"/models/ceiling-fan-base.json","material":"tamhatch","position":"0, 6.15, 0"},"fan-blade":{"path":"/models/ceiling-fan-blade.json","material":"tamhatch","position":"0.65, 5.55, 0","direction":"0, -1, 0"},"lightbulb":{"path":"/models/light-bulb.json","lit":false,"shadow_caster":false,"position":"0, 5, 0","direction":"0, -1, 0","scale":0.25},"table":{"path":"/models/table.json","material":"tamhatch"}});
+BlenderModel.addResources({"default":{"method":"GET","async":true},"chair1":{"path":"/models/chair.json","material":"tamhatch","position":"0, -1.25, -4"},"chair2":{"path":"/models/chair.json","material":"tamhatch","position":"0, -1.25, 4","direction":"-0.5, 0, 1"},"fan-base":{"path":"/models/ceiling-fan-base.json","material":"tamhatch","position":"0, 6.15, 0"},"fan-blade":{"path":"/models/ceiling-fan-blade.json","material":"tamhatch","position":"0.65, 5.55, 0","direction":"0, -1, 0"},"lightbulb":{"path":"/models/light-bulb.json","lit":false,"shadow_caster":false,"position":"0, 5, 0","direction":"0, -1, 0","scale":0.25},"room":{"path":"/models/room.json","material":"tamhatch","position":"0, 0, 0"},"table":{"path":"/models/table.json","material":"tamhatch"}});
 Material.addResources({"tamhatch":{"ambient":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"diffuse":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"specular":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"shininess":30,"layers":[{"type":"Lighting"},{"type":"Hatch","scaleU":2,"scaleV":2}]},"xhatch":{"ambient":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"diffuse":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"specular":{"red":1.0,"green":1.0,"blue":1.0,"alpha":1.0},"shininess":30,"layers":[{"type":"Xhatch"}]}});
 Jax.routes.root(TamhatchController, "index");
 Jax.routes.map("tamhatch/index", TamhatchController, "index");

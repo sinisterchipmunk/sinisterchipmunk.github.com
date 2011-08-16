@@ -161,46 +161,6 @@ var Dungeon = (function() {
       $super({mesh:new DungeonMesh(this)});
     },
     
-    // Attempts to "walk" from oldPos to newPos. If an obstacle (e.g. a wall) is in the way,
-    // the nearest possible non-colliding position is returned; else, newPos is returned.
-    walk: function(oldPos, newPos) {
-      /* NOT YET WORKING */
-      return newPos;
-      /*
-      var x = Math.round(oldPos[0]), y = Math.round(oldPos[2]);
-      var current = oldPos;
-      var dx = Math.abs(Math.round(newPos[0])-x), dy = Math.abs(Math.round(newPos[2])-y);
-      var sx, sy;
-      if (oldPos[0] < newPos[0]) sx = 1; else sx = -1;
-      if (oldPos[2] < newPos[2]) sy = 1; else sy = -1;
-      var err = dx - dy;
-      
-      while (true) {
-        current[0] = x;
-        current[2] = y;
-        if (x == Math.round(newPos[0]) && y == Math.round(newPos[2]))
-          return newPos;
-        var e2 = 2*err;
-        if (e2 > -dy) {
-          err = err - dy;
-          x = x + sx;
-        }
-        if (e2 < dx) {
-          err = err + dx;
-          y = y + sy;
-        }
-        // check for collision
-        if (x < 0 || x == this.map[0].length-1 || y < 0 || y == this.map.length-1) {
-          if (x < 0)                          vec3.add(current, [-0.48, 0, 0]);
-          else if (x == this.map[0].length-1) vec3.add(current, [ 0.48, 0, 0]);
-          if (y < 0)                          vec3.add(current, [ 0,    0, -0.48]);
-          else if (y == this.map.length-1)    vec3.add(current, [ 0,    0,  0.48]);
-          return current;
-        }
-      }
-      */
-    },
-    
     orientPlayer: function(player) {
       var pos = this.player_start.position.split(/,\s*/);
       var dir = this.player_start.direction.split(/,\s*/);
@@ -213,7 +173,8 @@ var Dungeon = (function() {
       var map = this.map;
       var blenderTorch = BlenderModel.find("torch");
       var mesh = blenderTorch.mesh;
-      var torchfire = this.torchfire = new Torchfire();
+      var torchfire = this.torchfire || new Torchfire();
+      var torches = [];
       // world.addObject(torchfire);
       
       // var mesh = new Jax.Mesh.Sphere({radius:0.05});
@@ -223,7 +184,7 @@ var Dungeon = (function() {
             var torch = LightSource.find(name);
             // torch.camera.setPosition(x, 0.5, y);
             torch.original_attenuation = torch.attenuation.quadratic;
-            this.torches.push(torch);
+            torches.push(torch);
             world.addLightSource(torch);
             
             // find a wall to affix the torch model to
@@ -243,10 +204,14 @@ var Dungeon = (function() {
             torchModel.camera.lookAt([x, height, y]);
             var emitterPosition = vec3.add([_x, height, _y], emitterOffset);
             torch.camera.setPosition(emitterPosition);
-            torchfire.addEmitter(emitterPosition);
+            if (!this.torchfire)
+              torchfire.addEmitter(emitterPosition);
           }
         }
       }
+      
+      this.torches = torches;
+      this.torchfire = torchfire;
     },
     
     update: function(tc) {

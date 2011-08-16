@@ -6,13 +6,16 @@ var BlenderModel = (function() {
   return Jax.Model.create({
     after_initialize: function() {
       var self = this;
+      if (self.color) self.color = Jax.Util.colorize(self.color);
       self.mesh = new Jax.Mesh({
         material: self.material,
+        color: self.color,
+        lit: self.lit,
         
         init: function(vertices, colors, texCoords, normals, indices) {
           if (self.data) {
             function push(source, dest, scale) {
-              scale = scale || 1.0;
+              if (!scale) scale = 1.0;
               for (i = 0; source && i < source.length; i++)
                 dest.push(source[i] * scale);
             }
@@ -78,6 +81,8 @@ var BlenderModel = (function() {
     },
     
     render: function($super, context, options) {
+      if (typeof(this.unlit) != "undefined")
+        options = Jax.Util.normalizeOptions(options, {unlit:this.unlit});
       if (this.data)
         $super(context, options);
       if (this.xhrError) {

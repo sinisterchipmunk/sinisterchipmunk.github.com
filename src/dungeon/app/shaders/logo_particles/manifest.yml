@@ -1,0 +1,8 @@
+description: |
+  Write a brief description for your shader.
+
+
+logo: "/path/to/logo.png"
+flip_y: false
+scale: 1
+resolution: 1
