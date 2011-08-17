@@ -3710,7 +3710,7 @@ Jax.Shader.Manifest = Jax.Class.create({
   texture: function(name, tex, context) {
     if (!context) throw new Error("Can't bind texture without a context");
     if (this.texture_tracker == GL_MAX_ACTIVE_TEXTURES-1) {
-      throw new Error("Maximum number of textures ("+GL_MAX_ACTIVE_TEXTURES+") has been reached!");
+      //  throw new Error("Maximum number of textures ("+GL_MAX_ACTIVE_TEXTURES+") has been reached!");
     }
 
     if (typeof(this.getValue(name)) != "number")
