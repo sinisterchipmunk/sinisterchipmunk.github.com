@@ -18,49 +18,37 @@ var DungeonHelper = Jax.Helper.create({
     var pos;
     if (forward || horiz || this.gravity) {
       var previousPosition = this.player.camera.getPosition();
-      this.player.camera.move(forward*timechange*speed);
-      this.player.camera.strafe(horiz*timechange*speed);
-      pos = this.player.camera.getPosition();
+      var pos = this._pos = this._pos || vec3.create();
+      this.player.camera.projectMovement(forward*timechange*speed, horiz*timechange*speed, pos);
       if (this.gravity) {
         var tmp = this._tmp = this._tmp || vec3.create();
         vec3.scale(this.gravity, timechange, tmp);
         vec3.add(pos, tmp, pos);
       }
-      this.player.camera.setPosition(previousPosition);
 
       // check player collision vs dungeon walls; don't move unless it's clear
       var collision;
-      // intersect ray with plane -- TODO add to Jax core
-      function intersectRayPlane(origin, direction, pOrigin, pNormal) {
-        var d = -vec3.dot(pNormal, pOrigin);
-        var numer = vec3.dot(pNormal, origin) + d;
-        var denom = vec3.dot(pNormal, direction);
-
-        if (denom == 0)  // normal is orthogonal to vector, can't intersect
-         return (-1.0);
-        return -(numer / denom);
-      }
-
       var self = this;
       var xform = self.player.camera.getTransformationMatrix();
-      var spNormal = this.spNormal = this.spNormal || vec3.create();
-      var spOrigin;
+      var sp = this._sp = this._sp || new Jax.Geometry.Plane();
       function move() {
         var bsp = self.bsp;
         if (collision = bsp.collideSphere(pos, self.player.radius)) {
           // calculate sliding plane so user can slide along wall
-          spOrigin = collision.collisionPoint;
-          vec3.normalize(vec3.subtract(pos, spOrigin, spNormal));
-          var l = intersectRayPlane(pos, spNormal, spOrigin, spNormal);
+          var spOrigin = collision.collisionPoint;
+          vec3.normalize(vec3.subtract(pos, spOrigin, sp.normal));
+          sp.set(spOrigin, sp.normal);
+          var l;
+          if ((l = sp.intersectRay(pos, sp.normal)) != false) {
+            vec3.scale(sp.normal, collision.penetration + (Math.EPSILON*2), pos);
+            vec3.add(spOrigin, pos, pos);
 
-          vec3.scale(spNormal, collision.penetration + (Math.EPSILON*2), pos);
-          vec3.add(spOrigin, pos, pos);
+            pos[0] = pos[0] - l * sp.normal[0];
+            pos[1] = pos[1] - l * sp.normal[1];
+            pos[2] = pos[2] - l * sp.normal[2];
 
-          pos[0] = pos[0] - l * spNormal[0];
-          pos[1] = pos[1] - l * spNormal[1];
-          pos[2] = pos[2] - l * spNormal[2];
-
-          return move();
+            return move();
+          }
         }
         return pos;
       }

@@ -51,28 +51,13 @@ var LogoParticles, LogoParticle = LogoParticles = (function() {
       this._starty = this.camera.getPosition()[1];
     },
     
-    // update: function(tc) {
-    //   if (this.startedAt) {
-    //     // float offset = time / 2.0;
-    //     // if (offset > 0.5) offset = 0.5;
-    //     // vertex.y += offset;
-    //     
-    //     var movement = (Jax.uptime - this.startedAt) / 2.0;
-    //     if (movement > 0.5) movement = 0.5;
-    //     var pos = this.camera.getPosition();
-    //     pos[1] = this._starty + movement;
-    //     this.camera.setPosition(pos);
-    //   }
-    // },
-    
-    // HACK jax is or-ing the draw mode to a default GL_TRIANGLES. Problem: GL_POINTS == 0. *sigh*
     render: function($super, context, options) {
       // HACK bug in jax is applying additive blending to objects that aren't lit
       // context.glDisable(GL_BLEND);
       context.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       context.glDepthFunc(GL_LESS);
       
-      $super(context, Jax.Util.normalizeOptions(options, {startedAt: this.startedAt, draw_mode:GL_POINTS}));
+      $super(context, Jax.Util.normalizeOptions(options, {startedAt: this.startedAt}));
       context.glDepthFunc(GL_LEQUAL);
       // context.glEnable(GL_BLEND);
     }

@@ -39,14 +39,8 @@ var ChamberController = (function() {
       this.particles = new LogoParticles({resolution:0.7,position:[0,-0.25,0],direction:[1,0,0]});
       //0.4375
 
-      // HACKS context should do this for us and rotation shouldn't need to 
-      // be set after reset
-      this.player.camera.reset();
-
       this.player.camera.setPosition([-1.8,0.35,1.8]);
-      this.player.camera.rotation = quat4.create([0,0,0,1]);
-      this.player.camera.lookAt([0,0.35,0]);
-      this.player.camera.pitch(-Math.PI/32);
+      this.player.camera.lookAt([0,0,0]);
       
       this.doPicking = true;
     },
@@ -130,9 +124,7 @@ var ChamberController = (function() {
           this.casket_lid.tracker += rotation;
           this.casket_lid.camera.roll(rotation);
         } else {
-          // HACK camera should be able to set yaw/pitch/roll in world space, not just in cam space
-          this.casket_lid.camera.rotation = quat4.create([0,0,0,1]);
-          this.casket_lid.camera.roll(Math.PI/3);
+          quat4.fromAngleAxis(Math.PI/3, this.casket_lid.camera.getViewVector(), this.casket_lid.camera.rotation);
           this.casket_lid.moving = 3;
           this.casket_lid.tracker = 0;
         }

@@ -46,12 +46,6 @@ var material;
     from_chamber: function() {
       // do everything in index, but reposition camera next to door
       this.index();
-      
-      // HACKS context should do this for us and rotation shouldn't need to 
-      // be set after reset
-      this.player.camera.reset();
-      this.player.camera.rotation = quat4.create([0,0,0,1]);
-      
       this.player.camera.reorient([0,0,-1], [20,0.3,4]);
     },
     

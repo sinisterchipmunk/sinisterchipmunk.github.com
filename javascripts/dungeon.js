@@ -640,6 +640,7 @@ var BSP = (function() {
       var check_id = 1;
       checks[0][0] = this;
       checks[0][1] = other;
+      var collisionPoint;
       var tri = new Jax.Geometry.Triangle(), a = vec3.create(), b = vec3.create(), c = vec3.create();
 
       while (check_id > 0) {
@@ -670,10 +671,12 @@ var BSP = (function() {
           mat4.multiplyVec3(transform, second.c, c);
           tri.set(a, b, c);
 
-          if (first.intersectTriangle(tri)) {
+          collisionPoint = collisionPoint || vec3.create();
+          if (first.intersectTriangle(tri, collisionPoint)) {
             this.collision = {
               first: first,
               second: second,
+              collisionPoint: collisionPoint,
               second_transformed: new Jax.Geometry.Triangle(tri.a, tri.b, tri.c)
             };
             return this.collision;
@@ -686,6 +689,7 @@ var BSP = (function() {
     collideSphere: function(position, radius) {
       if (!this.finalized) this.finalize();
 
+      var collisionPoint;
       var checks = this.checks = this.checks || [];
       var check_id = 1;
       checks[0] = this;
@@ -710,7 +714,7 @@ var BSP = (function() {
             check_id += 2;
           }
         } else {
-          var collisionPoint = vec3.create();
+          collisionPoint = collisionPoint || vec3.create();
           if (node.intersectSphere(position, radius, collisionPoint)) {
             var distance = vec3.length(vec3.subtract(collisionPoint, position, vec3.create()));
             this.collision = {
@@ -731,6 +735,7 @@ var BSP = (function() {
       var checks = this.checks = this.checks || [];
       var check_id = 1;
       checks[0] = this;
+      var collisionPoint;
 
       while (check_id > 0) {
         var node = checks[--check_id];
@@ -752,7 +757,7 @@ var BSP = (function() {
             check_id += 2;
           }
         } else {
-          var collisionPoint = vec4.create();
+          collisionPoint = collisionPoint || vec4.create();
           if (node.intersectRay(origin, direction, collisionPoint, length)) {
             this.collision = {
               triangle: node,
@@ -920,46 +925,35 @@ var DungeonHelper = Jax.Helper.create({
     var pos;
     if (forward || horiz || this.gravity) {
       var previousPosition = this.player.camera.getPosition();
-      this.player.camera.move(forward*timechange*speed);
-      this.player.camera.strafe(horiz*timechange*speed);
-      pos = this.player.camera.getPosition();
+      var pos = this._pos = this._pos || vec3.create();
+      this.player.camera.projectMovement(forward*timechange*speed, horiz*timechange*speed, pos);
       if (this.gravity) {
         var tmp = this._tmp = this._tmp || vec3.create();
         vec3.scale(this.gravity, timechange, tmp);
         vec3.add(pos, tmp, pos);
       }
-      this.player.camera.setPosition(previousPosition);
 
       var collision;
-      function intersectRayPlane(origin, direction, pOrigin, pNormal) {
-        var d = -vec3.dot(pNormal, pOrigin);
-        var numer = vec3.dot(pNormal, origin) + d;
-        var denom = vec3.dot(pNormal, direction);
-
-        if (denom == 0)  // normal is orthogonal to vector, can't intersect
-         return (-1.0);
-        return -(numer / denom);
-      }
-
       var self = this;
       var xform = self.player.camera.getTransformationMatrix();
-      var spNormal = this.spNormal = this.spNormal || vec3.create();
-      var spOrigin;
+      var sp = this._sp = this._sp || new Jax.Geometry.Plane();
       function move() {
         var bsp = self.bsp;
         if (collision = bsp.collideSphere(pos, self.player.radius)) {
-          spOrigin = collision.collisionPoint;
-          vec3.normalize(vec3.subtract(pos, spOrigin, spNormal));
-          var l = intersectRayPlane(pos, spNormal, spOrigin, spNormal);
+          var spOrigin = collision.collisionPoint;
+          vec3.normalize(vec3.subtract(pos, spOrigin, sp.normal));
+          sp.set(spOrigin, sp.normal);
+          var l;
+          if ((l = sp.intersectRay(pos, sp.normal)) != false) {
+            vec3.scale(sp.normal, collision.penetration + (Math.EPSILON*2), pos);
+            vec3.add(spOrigin, pos, pos);
 
-          vec3.scale(spNormal, collision.penetration + (Math.EPSILON*2), pos);
-          vec3.add(spOrigin, pos, pos);
+            pos[0] = pos[0] - l * sp.normal[0];
+            pos[1] = pos[1] - l * sp.normal[1];
+            pos[2] = pos[2] - l * sp.normal[2];
 
-          pos[0] = pos[0] - l * spNormal[0];
-          pos[1] = pos[1] - l * spNormal[1];
-          pos[2] = pos[2] - l * spNormal[2];
-
-          return move();
+            return move();
+          }
         }
         return pos;
       }
@@ -1304,12 +1298,11 @@ var LogoParticles, LogoParticle = LogoParticles = (function() {
       this._starty = this.camera.getPosition()[1];
     },
 
-
     render: function($super, context, options) {
       context.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       context.glDepthFunc(GL_LESS);
 
-      $super(context, Jax.Util.normalizeOptions(options, {startedAt: this.startedAt, draw_mode:GL_POINTS}));
+      $super(context, Jax.Util.normalizeOptions(options, {startedAt: this.startedAt}));
       context.glDepthFunc(GL_LEQUAL);
     }
   });
@@ -1415,12 +1408,8 @@ var ChamberController = (function() {
 
       this.particles = new LogoParticles({resolution:0.7,position:[0,-0.25,0],direction:[1,0,0]});
 
-      this.player.camera.reset();
-
       this.player.camera.setPosition([-1.8,0.35,1.8]);
-      this.player.camera.rotation = quat4.create([0,0,0,1]);
-      this.player.camera.lookAt([0,0.35,0]);
-      this.player.camera.pitch(-Math.PI/32);
+      this.player.camera.lookAt([0,0,0]);
 
       this.doPicking = true;
     },
@@ -1497,8 +1486,7 @@ var ChamberController = (function() {
           this.casket_lid.tracker += rotation;
           this.casket_lid.camera.roll(rotation);
         } else {
-          this.casket_lid.camera.rotation = quat4.create([0,0,0,1]);
-          this.casket_lid.camera.roll(Math.PI/3);
+          quat4.fromAngleAxis(Math.PI/3, this.casket_lid.camera.getViewVector(), this.casket_lid.camera.rotation);
           this.casket_lid.moving = 3;
           this.casket_lid.tracker = 0;
         }
@@ -1597,10 +1585,6 @@ var material;
 
     from_chamber: function() {
       this.index();
-
-      this.player.camera.reset();
-      this.player.camera.rotation = quat4.create([0,0,0,1]);
-
       this.player.camera.reorient([0,0,-1], [20,0.3,4]);
     },
 

@@ -195,6 +195,7 @@ var BSP = (function() {
       var check_id = 1;
       checks[0][0] = this;
       checks[0][1] = other;
+      var collisionPoint;
       var tri = new Jax.Geometry.Triangle(), a = vec3.create(), b = vec3.create(), c = vec3.create();
       
       while (check_id > 0) {
@@ -231,10 +232,12 @@ var BSP = (function() {
           mat4.multiplyVec3(transform, second.c, c);
           tri.set(a, b, c);
           
-          if (first.intersectTriangle(tri)) {
+          collisionPoint = collisionPoint || vec3.create();
+          if (first.intersectTriangle(tri, collisionPoint)) {
             this.collision = {
               first: first,
               second: second,
+              collisionPoint: collisionPoint,
               second_transformed: new Jax.Geometry.Triangle(tri.a, tri.b, tri.c)
             };
             return this.collision;
@@ -248,6 +251,7 @@ var BSP = (function() {
       if (!this.finalized) this.finalize();
       
       // buffer checks for GC optimization
+      var collisionPoint;
       var checks = this.checks = this.checks || [];
       var check_id = 1;
       checks[0] = this;
@@ -277,7 +281,7 @@ var BSP = (function() {
         } else {
           // dealing with a triangle, perform intersection test
           // transform second into first's coordinate space
-          var collisionPoint = vec3.create();
+          collisionPoint = collisionPoint || vec3.create();
           if (node.intersectSphere(position, radius, collisionPoint)) {
             var distance = vec3.length(vec3.subtract(collisionPoint, position, vec3.create()));
             this.collision = {
@@ -299,6 +303,7 @@ var BSP = (function() {
       var checks = this.checks = this.checks || [];
       var check_id = 1;
       checks[0] = this;
+      var collisionPoint;
       
       while (check_id > 0) {
         var node = checks[--check_id];
@@ -325,7 +330,7 @@ var BSP = (function() {
         } else {
           // dealing with a triangle, perform intersection test
           // transform second into first's coordinate space
-          var collisionPoint = vec4.create();
+          collisionPoint = collisionPoint || vec4.create();
           if (node.intersectRay(origin, direction, collisionPoint, length)) {
             this.collision = {
               triangle: node,

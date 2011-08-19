@@ -2070,6 +2070,62 @@ mat3.multiplyVec3 = function(matrix, vec, dest) {
 };
 mat4.IDENTITY = mat4.identity(mat4.create());
 
+quat4.fromAxes = function(view, right, up, dest) {
+  var mat = quat4.fromAxes.mat = quat4.fromAxes.mat || mat3.create();
+
+  mat[0] = right[0];
+  mat[3] = right[1];
+  mat[6] = right[2];
+
+  mat[1] = up[0];
+  mat[4] = up[1];
+  mat[7] = up[2];
+
+  mat[2] = view[0];
+  mat[5] = view[1];
+  mat[8] = view[2];
+
+  quat4.fromRotationMatrix(mat, dest);
+};
+
+quat4.fromRotationMatrix = function(mat, dest) {
+  if (!dest) dest = quat4.create();
+
+
+  var fTrace = mat[0] + mat[4] + mat[8];
+  var fRoot;
+
+  if ( fTrace > 0.0 )
+  {
+    fRoot = Math.sqrt(fTrace + 1.0);  // 2w
+    dest[3] = 0.5 * fRoot;
+    fRoot = 0.5/fRoot;  // 1/(4w)
+    dest[0] = (mat[7]-mat[5])*fRoot;
+    dest[1] = (mat[2]-mat[6])*fRoot;
+    dest[2] = (mat[3]-mat[1])*fRoot;
+  }
+  else
+  {
+    var s_iNext = quat4.fromRotationMatrix.s_iNext = quat4.fromRotationMatrix.s_iNext || [1,2,0];
+    var i = 0;
+    if ( mat[4] > mat[0] )
+      i = 1;
+    if ( mat[8] > mat[i*3+i] )
+      i = 2;
+    var j = s_iNext[i];
+    var k = s_iNext[j];
+
+    fRoot = Math.sqrt(mat[i*3+i]-mat[j*3+j]-mat[k*3+k] + 1.0);
+    dest[i] = 0.5 * fRoot;
+    fRoot = 0.5 / fRoot;
+    dest[3] = (mat[k*3+j] - mat[j*3+k]) * fRoot;
+    dest[j] = (mat[j*3+i] + mat[i*3+j]) * fRoot;
+    dest[k] = (mat[k*3+i] + mat[i*3+k]) * fRoot;
+  }
+
+  return dest;
+};
+
 quat4.toAngleAxis = function(src, dest) {
   if (!dest) dest = src;
 
@@ -3449,7 +3505,7 @@ Jax.Shader = (function() {
 
     getRawSource: function(options, which) {
       var source = this.options[which];
-      options = Jax.Util.normalizeOptions(options, {shader_type:which});
+      options = Jax.Util.normalizeOptions(options, {shader:this,shader_type:which});
       if (source && (source = source.render(options))) {
         var result = this.getPreamble(options);
         if (!options || !options.skip_export_definitions)
@@ -3710,7 +3766,7 @@ Jax.Shader.Manifest = Jax.Class.create({
   texture: function(name, tex, context) {
     if (!context) throw new Error("Can't bind texture without a context");
     if (this.texture_tracker == GL_MAX_ACTIVE_TEXTURES-1) {
-      //  throw new Error("Maximum number of textures ("+GL_MAX_ACTIVE_TEXTURES+") has been reached!");
+      // throw new Error("Maximum number of textures ("+GL_MAX_ACTIVE_TEXTURES+") has been reached!");
     }
 
     if (typeof(this.getValue(name)) != "number")
@@ -3880,6 +3936,7 @@ Jax.ShaderChain = (function() {
 
   function preprocessorOptions(self) {
     return {
+      shader: self,
       ignore_es_precision: true,
       export_prefix: self.getName(),
       exports: self.gatherExports(),
@@ -5350,7 +5407,7 @@ function calculateNormals(mesh) {
       for (var i in options)
         this[i] = options[i];
 
-      if (!this.draw_mode)
+      if (this.draw_mode == undefined)
         this.draw_mode = GL_TRIANGLES;
     },
 
@@ -5398,7 +5455,7 @@ function calculateNormals(mesh) {
       var result = Jax.Util.normalizeOptions(options, {
         material: this.material,
         default_material: this.default_material,
-        draw_mode: this.draw_mode || GL_TRIANGLES
+        draw_mode: this.draw_mode == undefined ? GL_TRIANGLES : this.draw_mode
       });
 
       if (!result.material) result.material = result.default_material;
@@ -5560,15 +5617,260 @@ Jax.Scene.ILLUMINATION_PASS = 1;
 Jax.Scene.AMBIENT_PASS = 2;
 Jax.Scene.SHADOWMAP_PASS = 3;
 
-Jax.Geometry = {};
+Jax.Geometry = {
+  DISJOINT: 0,
+  COINCIDE: 1,
+  INTERSECT: 2,
+};
 
+Jax.Geometry.Line = (function() {
+  var Line = Jax.Class.create({
+    initialize: function(a, b) {
+
+      this.a = vec3.create();
+
+      this.b = vec3.create();
+
+      this.normal = vec3.create();
+
+      this.length = 0;
+
+      if (arguments.length) this.set(a, b);
+    },
+
+    set: function(a, b) {
+      vec3.set(a, this.a);
+      vec3.set(b, this.b);
+
+      vec3.subtract(b, a, this.normal);
+      this.length = vec3.length(this.normal);
+      vec3.normalize(this.normal);
+
+      return this;
+    },
+
+    intersectLineSegment: function(line, dest) {
+      var u = vec3.subtract(this.b, this.a, vec3.create());
+      var v = vec3.subtract(line.b, line.a, vec3.create());
+      var w = vec3.subtract(this.a, line.a, vec3.create());
+      var D = (u[0] * v[1] - u[1] * v[0]);
+      if (Math.abs(D) < Math.EPSILON) { // S1 and S2 are parallel
+        if ((u[0] * w[1] - u[1] * w[0]) != 0 || (v[0] * w[1] - v[1] * w[0]) != 0) {
+          return Jax.Geometry.DISJOINT; // they are NOT colinear
+        }
+        var du = vec3.dot(u, u);
+        var dv = vec3.dot(v, v);
+        if (du == 0 && dv == 0) { // both segments are points
+          if (!Math.equalish(this.a, line.a)) // they are distinct points
+            return Jax.Geometry.DISJOINT;
+          if (dest) vec3.set(line.a, dest.a);
+          return Jax.Geometry.INTERSECT;
+        }
+        if (du == 0) { // +this+ is a single point
+          if (!line.contains(this.a)) // but is not in S2
+            return Jax.Geometry.DISJOINT;
+          if (dest) vec3.set(this.a, dest.a);
+          return Jax.Geometry.INTERSECT;
+        }
+        if (dv == 0) { // +line+ is a single point
+          if (!this.contains(line.a)) // but is not in this line
+            return Jax.Geometry.DISJOINT;
+          if (dest) vec3.set(line.a, dest.a);
+          return Jax.Geometry.INTERSECT;
+        }
+        var t0, t1; // endpoints of +this+ in eqn for +line+
+        var w2 = vec3.subtract(this.a, line.a, vec3.create());
+        if (v[0] != 0) {
+          t0 = w[0] / v[0];
+          t1 = w2[0] / v[0];
+        } else {
+          t0 = w[1] / v[1];
+          t1 = w2[1] / v[1];
+        }
+        if (t0 > t1) { // must have t0 smaller than t1
+          var t = t0; t0 = t1; t1 = t;
+        }
+        if (t0 > 1 || t1 < 0) // NO overlap
+          return Jax.Geometry.DISJOINT;
+        t0 = t0 < 0 ? 0 : t0; // clamp to min 0
+        t1 = t1 > 1 ? 1 : t1; // clamp to max 1
+        if (t0 == t1) {
+          if (line) {
+            vec3.add(line.a, vec3.scale(v, t0, dest.a), dest.a);
+            return Jax.Geometry.INTERSECT;
+          }
+        }
+
+        if (dest) {
+          vec3.add(line.a, vec3.scale(v, t0, dest.a), dest);
+          vec3.add(line.b, vec3.scale(v, t1, dest.b), dest);
+        }
+        return Jax.Geometry.COINCIDENT;
+      }
+
+      var sI = (v[0] * w[1] - v[1] * w[0]) / D;
+      if (sI < 0 || sI > 1) // no intersect with +this+
+        return Jax.Geometry.DISJOINT;
+      var tI = (u[0] * w[1] - u[1] * w[0]) / D;
+      if (tI < 0 || tI > 1) // no intersect with +line+
+        return Jax.Geometry.DISJOINT;
+
+      if (dest) vec3.add(this.a, vec3.scale(u, sI, dest), dest);
+      return Jax.Geometry.INTERSECT;
+    },
+
+    toString: function() {
+      return "[Line a:"+this.a+", b:"+this.b+"]";
+    }
+  });
+
+  Object.defineProperty(Line.prototype, 0, {
+    get: function() { return this.a; },
+    set: function(v) { return this.a = v; },
+    enumerable: false,
+    configurable: false
+  });
+
+  Object.defineProperty(Line.prototype, 1, {
+    get: function() { return this.b; },
+    set: function(v) { return this.b = v; },
+    enumerable: false,
+    configurable: false
+  });
+
+  return Line;
+})();
 Jax.Geometry.Plane = (function() {
+  var bufs = {};
+
   function innerProduct(a, x, y, z) {
     return (a[0]*x + a[1]*y + a[2]*z);
   }
 
-  return Jax.Class.create({
+  var Plane = Jax.Class.create({
+    toString: function() {
+      return "[Plane normal:"+this.normal+"; D:"+this.d+"]";
+    },
+
+    intersectTriangle: function(t, line) {
+      var ad = this.classify(t.a), bd = this.classify(t.b), cd = this.classify(t.c);
+      var sideAB = ad * bd, sideBC = bd * cd;
+      if (sideAB > 0.0 && sideBC > 0.0) return false; // all points on same side of plane
+
+      if (!line) return true;
+
+      var otherSide, sameSide1, sameSide2;
+      if (sideAB > 0) {
+        sameSide1 = t.a;
+        sameSide2 = t.b;
+        otherSide = t.c;
+      } else {
+        if (sideBC > 0) {
+          otherSide = t.a;
+          sameSide1 = t.b;
+          sameSide2 = t.c;
+        } else {
+          sameSide1 = t.a;
+          otherSide = t.b;
+          sameSide2 = t.c;
+        }
+      }
+
+      var seg1 = bufs.tri_seg1 = bufs.tri_seg1 || new Jax.Geometry.Line();
+      var seg2 = bufs.tri_seg2 = bufs.tri_seg2 || new Jax.Geometry.Line();
+      seg1.set(otherSide, sameSide1);
+      seg2.set(otherSide, sameSide2);
+
+      var p1 = bufs.tri_p1 = bufs.tri_p1 || vec3.create(),
+          p2 = bufs.tri_p2 = bufs.tri_p2 || vec3.create();
+      this.intersectLineSegment(seg1, p1);
+      this.intersectLineSegment(seg2, p2);
+      return line.set(p1, p2);
+    },
+
+    intersectLineSegment: function(line, point) {
+      var u = vec3.subtract(line.b, line.a, (bufs.lineseg_u = bufs.lineseg_u || vec3.create()));
+      var w = vec3.subtract(line.a, this.point, (bufs.lineseg_w = bufs.lineseg_w || vec3.create()));
+      var D =  vec3.dot(this.normal, u);
+      var N = -vec3.dot(this.normal, w);
+
+      if (Math.abs(D) < Math.EPSILON)             // segment is parallel to plane
+        if (N == 0) return Jax.Geometry.COINCIDE; // segment lies in plane
+        else return Jax.Geometry.DISJOINT;
+
+      var sI = N / D;
+      if (sI < 0 || sI > 1)
+        return Jax.Geometry.DISJOINT;
+
+      if (point)
+        vec3.add(line.a, vec3.scale(u, sI, point), point);
+
+      return Jax.Geometry.INTERSECT;
+    },
+
+    intersectRay: function(origin, direction) {
+      var numer = vec3.dot(this.normal, origin) + this.d;
+      var denom = vec3.dot(this.normal, direction);
+
+      if (denom == 0) // normal is orthogonal to vector, can't intersect
+        return false;
+
+      var result = -(numer / denom);
+      return -(numer / denom);
+    },
+
+    intersectPlane: function(p, line) {
+      var d1 = this.d, d2 = p.d;
+      var p1n = this.normal, p2n = p.normal;
+      var u = bufs.u = bufs.u || vec3.create();
+      vec3.cross(p1n, p2n, u);
+      var ax = (u[0] >= 0 ? u[0] : -u[0]);
+      var ay = (u[1] >= 0 ? u[1] : -u[1]);
+      var az = (u[2] >= 0 ? u[2] : -u[2]);
+
+      if ((ax+ay+az) < Math.EPSILON) { // planes are near parallel
+        if (Math.equalish(d1, d2)) return Jax.Geometry.COINCIDE;
+        else return Jax.Geometry.DISJOINT;
+      }
+
+      if (line) {
+        var maxc;
+        if (ax > ay)
+          if (ax > az) maxc = 0;
+          else maxc = 2;
+        else
+          if (ay > az) maxc = 1;
+          else maxc = 2;
+
+        var iP = bufs.iP = bufs.iP || vec3.create(); // intersection point
+        switch(maxc) {
+          case 0: // intersect with x = 0
+            iP[0] = 0;
+            iP[1] = (d2 * p1n[2] - d1 * p2n[2]) / u[0];
+            iP[2] = (d1 * p2n[1] - d2 * p1n[1]) / u[0];
+            break;
+          case 1: // intersect with y = 0
+            iP[0] = (d1 * p2n[2] - d2 * p1n[2]) / u[1];
+            iP[1] = 0;
+            iP[2] = (d2 * p1n[0] - d1 * p2n[0]) / u[1];
+            break;
+          case 2: // intersect with z = 0
+            iP[0] = (d2 * p1n[1] - d1 * p2n[1]) / u[2];
+            iP[1] = (d1 * p2n[0] - d2 * p1n[0]) / u[2];
+            iP[2] = 0;
+            break;
+        }
+
+        vec3.set(iP,    line[0]);
+        vec3.add(iP, u, line[1]);
+      }
+
+      return Jax.Geometry.INTERSECT;
+    },
+
     initialize: function(points) {
+      this.point = vec3.create();
+
       this.normal = vec3.create([0,1,0]);
 
       this.d = 0.0;
@@ -5578,32 +5880,33 @@ Jax.Geometry.Plane = (function() {
     },
 
     classify: function(O) {
-      return vec3.dot(this.normal, O) + this.d;
+      if (O.array) return vec3.dot(this.normal, O.array) + this.d;
+      else return vec3.dot(this.normal, O) + this.d;
     },
 
     set: function() {
-      var points = arguments;
-      if (arguments.length != 3) points = arguments[0];
-      if (typeof(points[0]) == 'object' && points[0].array) {
-        var vec = vec3.create();
-        vec3.subtract(points[1].array, points[0].array, this.normal);
-        vec3.subtract(points[2].array, points[0].array, vec);
-        vec3.cross(this.normal, vec, this.normal);
-        vec3.normalize(this.normal);
-
-        this.point = points[1].array;
-        this.d = -innerProduct(this.normal, this.point[0], this.point[1], this.point[2]);
+      if (arguments.length == 2) {
+        vec3.set(arguments[1], this.normal);
+        this.d = -vec3.dot(arguments[1], arguments[0]);
       } else {
-        var vec = vec3.create();
-        vec3.subtract(points[1], points[0], this.normal);
-        vec3.subtract(points[2], points[0], vec);
-        vec3.cross(this.normal, vec, this.normal);
-        vec3.normalize(this.normal);
+        var tmp1 = this.normal, tmp2 = vec3.create();
+        var points = arguments;
 
-        this.point = points[1];
-        this.d = -innerProduct(this.normal, this.point[0], this.point[1], this.point[2]);
+        if (arguments.length != 3) points = arguments[0];
+        if (typeof(points[0]) == 'object' && points[0].array) {
+          vec3.subtract(points[1].array, points[0].array, tmp1);
+          vec3.subtract(points[2].array, points[0].array, tmp2);
+          vec3.normalize(vec3.cross(tmp1, tmp2, this.normal));
+          this.d = -vec3.dot(this.normal, points[0].array);
+        } else {
+          vec3.subtract(points[1], points[0], tmp1);
+          vec3.subtract(points[2], points[0], tmp2);
+          vec3.normalize(vec3.cross(tmp1, tmp2, this.normal));
+          this.d = -vec3.dot(this.normal, points[0]);
+        }
       }
 
+      vec3.scale(this.normal, this.d, this.point);
       return this;
     },
 
@@ -5616,14 +5919,6 @@ Jax.Geometry.Plane = (function() {
       return this;
     },
 
-    distance: function(point)
-    {
-      var x, y, z;
-      if (arguments.length == 3) { x = arguments[0]; y = arguments[1]; z = arguments[2]; }
-      else if (point.array) { x = point.array[0]; y = point.array[1]; z = point.array[2]; }
-      else { x = point[0]; y = point[1]; z = point[2]; }
-      return this.d + innerProduct(this.normal, x, y, z);
-    },
 
     whereis: function()
     {
@@ -5638,128 +5933,121 @@ Jax.Geometry.Plane = (function() {
       return Jax.Geometry.Plane.INTERSECT;
     }
   });
+
+  Plane.prototype.distance = Plane.prototype.classify;
+
+  return Plane;
 })();
 
 Jax.Geometry.Plane.FRONT     = 1;
 Jax.Geometry.Plane.BACK      = 2;
 Jax.Geometry.Plane.INTERSECT = 3;
 Jax.Geometry.Triangle = (function() {
-function SORT(isect) {
-  if(isect[0] > isect[1])
-  {
-    var c = isect[0];
-    isect[0] = isect[1];
-    isect[1] = c;
+  /* for capturing point of intersection */
+var bufs;
+if (typeof(bufs) == 'undefined') // in case it was defined elsewhere
+  bufs = {};
+
+
+function slow_tri_tri_intersect(t1, t2, dest)
+{
+  var line1 = bufs.slowtri_line1 = bufs.slowtri_line1 || new Jax.Geometry.Line();
+  var line2 = bufs.slowtri_line2 = bufs.slowtri_line2 || new Jax.Geometry.Line();
+  if (t1.plane.intersectTriangle(t2, line1) && t2.plane.intersectTriangle(t1, line2)) {
+    line1.intersectLineSegment(line2, dest);
+    return true;
   }
+  else return false;
+
+  /*
+  var p1 = t1.plane;
+  var f1, f2, f3, f12, f23;
+  var other_side=0;
+
+  {
+    f1=p1.classify(t2.a);
+    f2=p1.classify(t2.b);
+    f3=p1.classify(t2.c);
+    f12=f1*f2;
+    f23=f2*f3;
+    if (f12>0.0 && f23>0.0)
+      return false;
+    other_side=(f12<0.0?(f23<0.0?1:0):2);
+  }
+
+  var p2 = t2.plane;
+  var n12 = bufs.slowtritri_n12 = bufs.slowtritri_n12 || vec3.create();
+  vec3.add(p1.normal, p2.normal, n12);
+  var a2 = t2[(other_side+1) % 3];
+  var b2 = t2[other_side];
+  var c2 = t2[(other_side+2) % 3];
+
+  var t21 = -(p1.d + p2.d + vec3.dot(a2, n12)) / vec3.dot(vec3.subtract(b2, a2, dest), n12);
+  vec3.add(a2, vec3.scale(dest, t21, dest), dest);
+  if (t1.pointInTri(dest)) return dest;
+
+  var t22 = -(p1.d + p2.d + vec3.dot(c2, n12)) / vec3.dot(vec3.subtract(b2, c2, dest), n12);
+  vec3.add(c2, vec3.scale(dest, t22, dest), dest);
+  if (t1.pointInTri(dest)) return dest;
+
+  {
+    f1=p2.classify(t1.a);
+    f2=p2.classify(t1.b);
+    f3=p2.classify(t1.c);
+    f12=f1*f2;
+    f23=f2*f3;
+    if (f12>0.0 && f23>0.0)
+      return false;
+    other_side=(f12<0.0?(f23<0.0?1:0):2);
+  }
+
+  var a1 = t1[(other_side+1)%3];
+  var b1 = t1[other_side];
+  var c1 = t1[(other_side+2)%3];
+
+  var t11 = -(p1.d + p2.d + vec3.dot(a1, n12)) / vec3.dot(vec3.subtract(b1, a1, dest), n12);
+  vec3.add(a1, vec3.scale(dest, t11, dest), dest);
+  if (t2.pointInTri(dest)) return dest;
+
+  var t12 = -(p1.d + p2.d + vec3.dot(c1, n12)) / vec3.dot(vec3.subtract(b1, c1, dest), n12);
+  vec3.add(c1, vec3.scale(dest, t12, dest), dest);
+  if (t2.pointInTri(dest)) return dest;
+
+  return false;
+  */
 }
 
-function ISECT(VV0, VV1, VV2, D0, D1, D2, isect) {
-  isect[0] = VV0 + (VV1 - VV0) * D0 / (D0 - D1);
-  isect[1] = VV0 + (VV2 - VV0) * D0 / (D0 - D2);
-}
+  /* faster than capturing intersection point when we don't care about it */
+var bufs;
+if (typeof(bufs) != 'undefined') // in case it was defined elsewhere
+  bufs = {};
 
-function COMPUTE_INTERVALS(VV0,VV1,VV2,D0,D1,D2,D0D1,D0D2,isect) {
-  if(D0D1 > 0)
-  {
-    /* here we know that D0D2<=0.0 */
-    /* that is D0, D1 are on the same side, D2 on the other or on the plane */
-    ISECT(VV2,VV0,VV1,D2,D0,D1,isect);
-  }
-  else if(D0D2 > 0)
-  {
-    /* here we know that d0d1<=0.0 */
-    ISECT(VV1,VV0,VV2,D1,D0,D2,isect);
-  }
-  else if(D1 * D2 > 0 || D0 != 0)
-  {
-    /* here we know that d0d1<=0.0 or that D0!=0.0 */
-    ISECT(VV0,VV1,VV2,D0,D1,D2,isect);
-  }
-  else if(D1 != 0)
-  {
-    ISECT(VV1,VV0,VV2,D1,D0,D2,isect);
-  }
-  else if(D2 != 0)
-  {
-    ISECT(VV2,VV0,VV1,D2,D0,D1,isect);
-  }
-  else
-  {
-    /* triangles are coplanar */
-    throw 1;
-  }
-}
+
+
+
+
+
+
+/* sort so that a<=b */
+
+
+
+
+
+
+
 
 /* this edge to edge test is based on Franlin Antonio's gem:
    "Faster Line Segment Intersection", in Graphics Gems III,
    pp. 199-202 */
-function EDGE_EDGE_TEST(Ax, Ay, V0,U0,U1, i0, i1) {
-  var Bx,By,Cx,Cy,e,d,f;
 
-  Bx=U0[i0]-U1[i0];
-  By=U0[i1]-U1[i1];
-  Cx=V0[i0]-U0[i0];
-  Cy=V0[i1]-U0[i1];
-  f=Ay*Bx-Ax*By;
-  d=By*Cx-Bx*Cy;
-  if((f>0 && d>=0 && d<=f) || (f<0 && d<=0 && d>=f))
-  {
-    e=Ax*Cy-Ay*Cx;
-    if(f>0)
-    {
-      if(e>=0 && e<=f) return true;
-    }
-    else
-    {
-      if(e<=0 && e>=f) return true;
-    }
-  }
-  return false;
-}
 
-function EDGE_AGAINST_TRI_EDGES(V0,V1,U0,U1,U2,  i0, i1)
-{
-  var Ax,Ay;
-  Ax=V1[i0]-V0[i0];
-  Ay=V1[i1]-V0[i1];
 
-  /* test edge U0,U1 against V0,V1 */
-  return EDGE_EDGE_TEST(Ax,Ay, V0,U0,U1, i0,i1) ||
-  /* test edge U1,U2 against V0,V1 */
-         EDGE_EDGE_TEST(Ax,Ay, V0,U1,U2, i0,i1) ||
-  /* test edge U2,U1 against V0,V1 */
-         EDGE_EDGE_TEST(Ax,Ay, V0,U2,U0, i0,i1);
-}
 
-function POINT_IN_TRI(V0,U0,U1,U2, i0,i1)
-{
-  var a,b,c,d0,d1,d2;
-  /* is T1 completly inside T2? */
-  /* check if V0 is inside tri(U0,U1,U2) */
-  a  = U1[i1]-U0[i1];
-  b  = -(U1[i0]-U0[i0]);
-  c  = -a*U0[i0]-b*U0[i1];
-  d0 = a*V0[i0]+b*V0[i1]+c;
 
-  a  = U2[i1]-U1[i1];
-  b  = -(U2[i0]-U1[i0]);
-  c  = -a*U1[i0]-b*U1[i1];
-  d1 = a*V0[i0]+b*V0[i1]+c;
-
-  a  =      U0[i1] -     U2[i1];
-  b  = -   (U0[i0] -     U2[i0]);
-  c  = -a * U2[i0] - b * U2[i1];
-  d2 =  a * V0[i0] + b * V0[i1] + c;
-
-  if(d0 * d1 > 0.0)
-  {
-    if(d0 * d2 > 0.0) return true;
-  }
-  return false;
-}
 
 function coplanar_tri_tri(N, V0, V1, V2, U0, U1, U2) {
-  var A = this.A = this.A || vec3.create();
+  var A = bufs.tritri_A = bufs.tritri_A || vec3.create();
   var i0, i1;
 
   /* first project onto an axis-aligned plane, that maximizes the area */
@@ -5796,26 +6084,291 @@ function coplanar_tri_tri(N, V0, V1, V2, U0, U1, U2) {
   }
 
   /* test all edges of triangle 1 against the edges of triangle 2 */
-  if (EDGE_AGAINST_TRI_EDGES(V0,V1,U0,U1,U2,i0,i1) ||
-      EDGE_AGAINST_TRI_EDGES(V1,V2,U0,U1,U2,i0,i1) ||
-      EDGE_AGAINST_TRI_EDGES(V2,V0,U0,U1,U2,i0,i1)) return true;
+  /* (inline function EDGE_AGAINST_TRI_EDGES) */
+
+  {
+    var Ax,Ay,Bx,By,Cx,Cy,e,d,f;
+    Ax=V1[i0]-V0[i0];
+    Ay=V1[i1]-V0[i1];
+    /* test edge U0,U1 against V0,V1 */
+    /* (inline function EDGE_EDGE_TEST) */
+
+  Bx=U0[i0]-U1[i0];
+  By=U0[i1]-U1[i1];
+  Cx=V0[i0]-U0[i0];
+  Cy=V0[i1]-U0[i1];
+  f=Ay*Bx-Ax*By;
+  d=By*Cx-Bx*Cy;
+  if((f>0 && d>=0 && d<=f) || (f<0 && d<=0 && d>=f))
+  {
+    e=Ax*Cy-Ay*Cx;
+    if(f>0)
+    {
+      if(e>=0 && e<=f) return true;
+    }
+    else
+    {
+      if(e<=0 && e>=f) return true;
+    }
+  }
+
+    /* test edge U1,U2 against V0,V1 */
+    /* (inline function EDGE_EDGE_TEST) */
+
+  Bx=U1[i0]-U2[i0];
+  By=U1[i1]-U2[i1];
+  Cx=V0[i0]-U1[i0];
+  Cy=V0[i1]-U1[i1];
+  f=Ay*Bx-Ax*By;
+  d=By*Cx-Bx*Cy;
+  if((f>0 && d>=0 && d<=f) || (f<0 && d<=0 && d>=f))
+  {
+    e=Ax*Cy-Ay*Cx;
+    if(f>0)
+    {
+      if(e>=0 && e<=f) return true;
+    }
+    else
+    {
+      if(e<=0 && e>=f) return true;
+    }
+  }
+
+    /* test edge U2,U1 against V0,V1 */
+    /* (inline function EDGE_EDGE_TEST) */
+
+  Bx=U2[i0]-U0[i0];
+  By=U2[i1]-U0[i1];
+  Cx=V0[i0]-U2[i0];
+  Cy=V0[i1]-U2[i1];
+  f=Ay*Bx-Ax*By;
+  d=By*Cx-Bx*Cy;
+  if((f>0 && d>=0 && d<=f) || (f<0 && d<=0 && d>=f))
+  {
+    e=Ax*Cy-Ay*Cx;
+    if(f>0)
+    {
+      if(e>=0 && e<=f) return true;
+    }
+    else
+    {
+      if(e<=0 && e>=f) return true;
+    }
+  }
+
+  }
+
+  /* (inline function EDGE_AGAINST_TRI_EDGES) */
+
+  {
+    var Ax,Ay,Bx,By,Cx,Cy,e,d,f;
+    Ax=V2[i0]-V1[i0];
+    Ay=V2[i1]-V1[i1];
+    /* test edge U0,U1 against V1,V2 */
+    /* (inline function EDGE_EDGE_TEST) */
+
+  Bx=U0[i0]-U1[i0];
+  By=U0[i1]-U1[i1];
+  Cx=V1[i0]-U0[i0];
+  Cy=V1[i1]-U0[i1];
+  f=Ay*Bx-Ax*By;
+  d=By*Cx-Bx*Cy;
+  if((f>0 && d>=0 && d<=f) || (f<0 && d<=0 && d>=f))
+  {
+    e=Ax*Cy-Ay*Cx;
+    if(f>0)
+    {
+      if(e>=0 && e<=f) return true;
+    }
+    else
+    {
+      if(e<=0 && e>=f) return true;
+    }
+  }
+
+    /* test edge U1,U2 against V1,V2 */
+    /* (inline function EDGE_EDGE_TEST) */
+
+  Bx=U1[i0]-U2[i0];
+  By=U1[i1]-U2[i1];
+  Cx=V1[i0]-U1[i0];
+  Cy=V1[i1]-U1[i1];
+  f=Ay*Bx-Ax*By;
+  d=By*Cx-Bx*Cy;
+  if((f>0 && d>=0 && d<=f) || (f<0 && d<=0 && d>=f))
+  {
+    e=Ax*Cy-Ay*Cx;
+    if(f>0)
+    {
+      if(e>=0 && e<=f) return true;
+    }
+    else
+    {
+      if(e<=0 && e>=f) return true;
+    }
+  }
+
+    /* test edge U2,U1 against V1,V2 */
+    /* (inline function EDGE_EDGE_TEST) */
+
+  Bx=U2[i0]-U0[i0];
+  By=U2[i1]-U0[i1];
+  Cx=V1[i0]-U2[i0];
+  Cy=V1[i1]-U2[i1];
+  f=Ay*Bx-Ax*By;
+  d=By*Cx-Bx*Cy;
+  if((f>0 && d>=0 && d<=f) || (f<0 && d<=0 && d>=f))
+  {
+    e=Ax*Cy-Ay*Cx;
+    if(f>0)
+    {
+      if(e>=0 && e<=f) return true;
+    }
+    else
+    {
+      if(e<=0 && e>=f) return true;
+    }
+  }
+
+  }
+
+  /* (inline function EDGE_AGAINST_TRI_EDGES) */
+
+  {
+    var Ax,Ay,Bx,By,Cx,Cy,e,d,f;
+    Ax=V0[i0]-V2[i0];
+    Ay=V0[i1]-V2[i1];
+    /* test edge U0,U1 against V2,V0 */
+    /* (inline function EDGE_EDGE_TEST) */
+
+  Bx=U0[i0]-U1[i0];
+  By=U0[i1]-U1[i1];
+  Cx=V2[i0]-U0[i0];
+  Cy=V2[i1]-U0[i1];
+  f=Ay*Bx-Ax*By;
+  d=By*Cx-Bx*Cy;
+  if((f>0 && d>=0 && d<=f) || (f<0 && d<=0 && d>=f))
+  {
+    e=Ax*Cy-Ay*Cx;
+    if(f>0)
+    {
+      if(e>=0 && e<=f) return true;
+    }
+    else
+    {
+      if(e<=0 && e>=f) return true;
+    }
+  }
+
+    /* test edge U1,U2 against V2,V0 */
+    /* (inline function EDGE_EDGE_TEST) */
+
+  Bx=U1[i0]-U2[i0];
+  By=U1[i1]-U2[i1];
+  Cx=V2[i0]-U1[i0];
+  Cy=V2[i1]-U1[i1];
+  f=Ay*Bx-Ax*By;
+  d=By*Cx-Bx*Cy;
+  if((f>0 && d>=0 && d<=f) || (f<0 && d<=0 && d>=f))
+  {
+    e=Ax*Cy-Ay*Cx;
+    if(f>0)
+    {
+      if(e>=0 && e<=f) return true;
+    }
+    else
+    {
+      if(e<=0 && e>=f) return true;
+    }
+  }
+
+    /* test edge U2,U1 against V2,V0 */
+    /* (inline function EDGE_EDGE_TEST) */
+
+  Bx=U2[i0]-U0[i0];
+  By=U2[i1]-U0[i1];
+  Cx=V2[i0]-U2[i0];
+  Cy=V2[i1]-U2[i1];
+  f=Ay*Bx-Ax*By;
+  d=By*Cx-Bx*Cy;
+  if((f>0 && d>=0 && d<=f) || (f<0 && d<=0 && d>=f))
+  {
+    e=Ax*Cy-Ay*Cx;
+    if(f>0)
+    {
+      if(e>=0 && e<=f) return true;
+    }
+    else
+    {
+      if(e<=0 && e>=f) return true;
+    }
+  }
+
+  }
+
 
   /* finally, test if tri1 is totally contained in tri2 or vice versa */
-  if (POINT_IN_TRI(V0,U0,U1,U2, i0,i1) ||
-      POINT_IN_TRI(U0,V0,V1,V2, i0,i1)) return true;
+  /* (inline function POINT_IN_TRI) */
+
+  {
+    var a,b,c,d0,d1,d2;
+    /* is T1 completly inside T2? */
+    /* check if V0 is inside tri(U0,U1,U2) */
+    a=U1[i1]-U0[i1];
+    b=-(U1[i0]-U0[i0]);
+    c=-a*U0[i0]-b*U0[i1];
+    d0=a*V0[i0]+b*V0[i1]+c;
+    a=U2[i1]-U1[i1];
+    b=-(U2[i0]-U1[i0]);
+    c=-a*U1[i0]-b*U1[i1];
+    d1=a*V0[i0]+b*V0[i1]+c;
+    a=U0[i1]-U2[i1];
+    b=-(U0[i0]-U2[i0]);
+    c=-a*U2[i0]-b*U2[i1];
+    d2=a*V0[i0]+b*V0[i1]+c;
+    if(d0*d1>0.0)
+    {
+      if(d0*d2>0.0) return true;
+    }
+  }
+
+  /* (inline function POINT_IN_TRI) */
+
+  {
+    var a,b,c,d0,d1,d2;
+    /* is T1 completly inside T2? */
+    /* check if U0 is inside tri(V0,V1,V2) */
+    a=V1[i1]-V0[i1];
+    b=-(V1[i0]-V0[i0]);
+    c=-a*V0[i0]-b*V0[i1];
+    d0=a*U0[i0]+b*U0[i1]+c;
+    a=V2[i1]-V1[i1];
+    b=-(V2[i0]-V1[i0]);
+    c=-a*V1[i0]-b*V1[i1];
+    d1=a*U0[i0]+b*U0[i1]+c;
+    a=V0[i1]-V2[i1];
+    b=-(V0[i0]-V2[i0]);
+    c=-a*V2[i0]-b*V2[i1];
+    d2=a*U0[i0]+b*U0[i1]+c;
+    if(d0*d1>0.0)
+    {
+      if(d0*d2>0.0) return true;
+    }
+  }
+
 
   return false;
 }
 
 function tri_tri_intersect(V0, V1, V2, U0, U1, U2)
 {
-  var E1 = this.E1 = this.E1 || vec3.create(),
-      E2 = this.E2 = this.E2 || vec3.create(),
-      N1 = this.N1 = this.N1 || vec3.create(),
-      N2 = this.N2 = this.N2 || vec3.create(),
-      D  = this.D  = this.D  || vec3.create(),
-      isect1 = this.isect1 = this.isect1 || vec2.create(),
-      isect2 = this.isect2 = this.isect2 || vec2.create();
+  var E1 = bufs.tritri_E1 = bufs.tritri_E1 || vec3.create(),
+      E2 = bufs.tritri_E2 = bufs.tritri_E2 || vec3.create(),
+      N1 = bufs.tritri_N1 = bufs.tritri_N1 || vec3.create(),
+      N2 = bufs.tritri_N2 = bufs.tritri_N2 || vec3.create(),
+      D  = bufs.tritri_D  = bufs.tritri_D  || vec3.create(),
+      isect1 = bufs.tritri_isect1 = bufs.tritri_isect1 || vec2.create(),
+      isect2 = bufs.tritri_isect2 = bufs.tritri_isect2 || vec2.create();
   var d1, d2;
   var du0,du1,du2,dv0,dv1,dv2;
   var du0du1,du0du2,dv0dv1,dv0dv2;
@@ -5892,17 +6445,137 @@ function tri_tri_intersect(V0, V1, V2, U0, U1, U2)
 
   try {
     /* compute interval for triangle 1 */
-    COMPUTE_INTERVALS(vp0,vp1,vp2,dv0,dv1,dv2,dv0dv1,dv0dv2,isect1);
+    /* (inline function COMPUTE_INTERVALS) */
+
+  if(dv0dv1>0.0)
+  {
+    /* here we know that dv0dv2<=0.0 */
+    /* that is dv0, dv1 are on the same side, dv2 on the other or on the plane */
+    /* (inline function ISECT) */
+
+  isect1[0]=vp2+(vp0-vp2)*dv2/(dv2-dv0);
+  isect1[1]=vp2+(vp1-vp2)*dv2/(dv2-dv1);
+
+  }
+  else if(dv0dv2>0.0)
+  {
+    /* here we know that d0d1<=0.0 */
+    /* (inline function ISECT) */
+
+  isect1[0]=vp1+(vp0-vp1)*dv1/(dv1-dv0);
+  isect1[1]=vp1+(vp2-vp1)*dv1/(dv1-dv2);
+
+  }
+  else if(dv1*dv2>0.0 || dv0!=0.0)
+  {
+    /* here we know that d0d1<=0.0 or that dv0!=0.0 */
+    /* (inline function ISECT) */
+
+  isect1[0]=vp0+(vp1-vp0)*dv0/(dv0-dv1);
+  isect1[1]=vp0+(vp2-vp0)*dv0/(dv0-dv2);
+
+  }
+  else if(dv1!=0.0)
+  {
+    /* (inline function ISECT) */
+
+  isect1[0]=vp1+(vp0-vp1)*dv1/(dv1-dv0);
+  isect1[1]=vp1+(vp2-vp1)*dv1/(dv1-dv2);
+
+  }
+  else if(dv2!=0.0)
+  {
+    /* (inline function ISECT) */
+
+  isect1[0]=vp2+(vp0-vp2)*dv2/(dv2-dv0);
+  isect1[1]=vp2+(vp1-vp2)*dv2/(dv2-dv1);
+
+  }
+  else
+  {
+    /* triangles are coplanar */
+    return coplanar_tri_tri(N1,V0,V1,V2,U0,U1,U2);
+  }
+
 
     /* compute interval for triangle 2 */
-    COMPUTE_INTERVALS(up0,up1,up2,du0,du1,du2,du0du1,du0du2,isect2);
+    /* (inline function COMPUTE_INTERVALS) */
+
+  if(du0du1>0.0)
+  {
+    /* here we know that du0du2<=0.0 */
+    /* that is du0, du1 are on the same side, du2 on the other or on the plane */
+    /* (inline function ISECT) */
+
+  isect2[0]=up2+(up0-up2)*du2/(du2-du0);
+  isect2[1]=up2+(up1-up2)*du2/(du2-du1);
+
+  }
+  else if(du0du2>0.0)
+  {
+    /* here we know that d0d1<=0.0 */
+    /* (inline function ISECT) */
+
+  isect2[0]=up1+(up0-up1)*du1/(du1-du0);
+  isect2[1]=up1+(up2-up1)*du1/(du1-du2);
+
+  }
+  else if(du1*du2>0.0 || du0!=0.0)
+  {
+    /* here we know that d0d1<=0.0 or that du0!=0.0 */
+    /* (inline function ISECT) */
+
+  isect2[0]=up0+(up1-up0)*du0/(du0-du1);
+  isect2[1]=up0+(up2-up0)*du0/(du0-du2);
+
+  }
+  else if(du1!=0.0)
+  {
+    /* (inline function ISECT) */
+
+  isect2[0]=up1+(up0-up1)*du1/(du1-du0);
+  isect2[1]=up1+(up2-up1)*du1/(du1-du2);
+
+  }
+  else if(du2!=0.0)
+  {
+    /* (inline function ISECT) */
+
+  isect2[0]=up2+(up0-up2)*du2/(du2-du0);
+  isect2[1]=up2+(up1-up2)*du2/(du2-du1);
+
+  }
+  else
+  {
+    /* triangles are coplanar */
+    return coplanar_tri_tri(N1,V0,V1,V2,U0,U1,U2);
+  }
+
   } catch(e) {
     if (e == 1) return coplanar_tri_tri(N1, V0, V1, V2, U0, U1, U2);
     throw e;
   }
 
-  SORT(isect1);
-  SORT(isect2);
+  /* (inline function SORT) */
+
+  if(isect1[0]> isect1[1])
+  {
+    var c;
+    c=isect1[0];
+    isect1[0]= isect1[1];
+     isect1[1]=c;
+  }
+
+  /* (inline function SORT) */
+
+  if(isect2[0]> isect1[1])
+  {
+    var c;
+    c=isect2[0];
+    isect2[0]= isect1[1];
+     isect1[1]=c;
+  }
+
 
   if(isect1[1] < isect2[0] || isect2[1] < isect1[0]) return false;
   return true;
@@ -5910,7 +6583,7 @@ function tri_tri_intersect(V0, V1, V2, U0, U1, U2)
 
   var bufs = {};
 
-  return Jax.Class.create({
+  var Triangle = Jax.Class.create({
     initialize: function(a, b, c) {
       this.a = vec3.create();
       this.b = vec3.create();
@@ -6013,12 +6686,13 @@ function tri_tri_intersect(V0, V1, V2, U0, U1, U2)
       return false;
     },
 
-    intersectTriangle: function(t) {
-      return tri_tri_intersect(this.a, this.b, this.c, t.a, t.b, t.c);
+    intersectTriangle: function(t, dest) {
+      if (dest) return slow_tri_tri_intersect(this, t, dest);
+      else return tri_tri_intersect(this.a, this.b, this.c, t.a, t.b, t.c);
     },
 
     updateDescription: function() {
-      var p = this._p = this._p || new Jax.Geometry.Plane(this.a, this.b, this.c);
+      var p = this.plane = this.plane || new Jax.Geometry.Plane(this.a, this.b, this.c);
       var n = p.normal;
       var a = [Math.abs(n.x), Math.abs(n.y), Math.abs(n.z)];
 
@@ -6059,6 +6733,29 @@ function tri_tri_intersect(V0, V1, V2, U0, U1, U2)
       return a >= 0 && (a+b) <= 1;
     }
   });
+
+  Object.defineProperty(Triangle.prototype, 0, {
+    get: function() { return this.a; },
+    set: function(v) { return this.a = v; },
+    enumerable: false,
+    configurable: false
+  });
+
+  Object.defineProperty(Triangle.prototype, 1, {
+    get: function() { return this.b; },
+    set: function(v) { return this.b = v; },
+    enumerable: false,
+    configurable: false
+  });
+
+  Object.defineProperty(Triangle.prototype, 2, {
+    get: function() { return this.c; },
+    set: function(v) { return this.c = v; },
+    enumerable: false,
+    configurable: false
+  });
+
+  return Triangle;
 })();
 
 Jax.Scene.Frustum = (function() {
@@ -6886,12 +7583,19 @@ Jax.Camera = (function() {
       var vec;
       if (arguments.length == 3) vec = arguments;
       else vec = vec3.create(vector);
+      vec3.scale(vec, -1);
       vec3.normalize(vec);
 
-      var rotquat = vec3.toQuatRotation(storeVecBuf(this, VIEW), vec, tmpRotQuat(this));
-      quat4.multiply(rotquat, this.rotation, this.rotation);
-      quat4.normalize(this.rotation);
+      if (this.fixed_yaw) {
+        var right = vec3.normalize(vec3.cross(this.fixed_yaw_axis, vec, vec3.create()));
+        var up = vec3.normalize(vec3.cross(vec, right, vec3.create()));
+        quat4.fromAxes(vec, right, up, this.rotation);
+      } else {
+        var rotquat = vec3.toQuatRotation(storeVecBuf(this, VIEW), vec, tmpRotQuat(this));
+        quat4.multiply(rotquat, this.rotation, this.rotation);
+      }
 
+      quat4.normalize(this.rotation);
       this.fireEvent('updated');
       return this;
     },
@@ -7079,7 +7783,25 @@ Jax.Camera = (function() {
       return this;
     },
 
-    reset: function() { this.lookAt([0,0,-1], [0,0,0]); }
+    projectMovement: function(forward, strafe, dest) {
+      if (!strafe) strafe = 0;
+      if (!dest) dest = vec3.create();
+
+      var view = vec3.scale(storeVecBuf(this, VIEW), forward);
+      var right = vec3.scale(storeVecBuf(this, RIGHT), strafe);
+      vec3.set(this.position, dest);
+      vec3.add(view, dest, dest);
+      vec3.add(right, dest, dest);
+
+      return dest;
+    },
+
+    reset: function() {
+      this.position[0] = this.position[1] = this.position[2] = 0;
+      this.rotation[0] = this.rotation[1] = this.rotation[2] = 0;
+      this.rotation[3] = 1;
+      this.fireEvent('updated');
+    }
   });
 })();
 
