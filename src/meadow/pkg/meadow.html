@@ -43,14 +43,18 @@
     <div style="position:fixed;z-index:99;top:0px;right:0px;margin:10px;">
       <!-- twitter -->
       <div style="margin-bottom:5px;">
-        <a href="http://twitter.com/share" class="twitter-share-button" data-count="none" data-via="sinisterchipmnk">Tweet</a><script type="text/javascript" src="http://platform.twitter.com/widgets.js"></script>
+        <a href="http://twitter.com/share" class="twitter-share-button" data-count="vertical" data-via="sinisterchipmnk">Tweet</a><script type="text/javascript" src="http://platform.twitter.com/widgets.js"></script>
       </div>
 
-      <!-- google buzz -->
-      <div style="margin-bottom:5px;">
-        <a title="Post to Google Buzz" class="google-buzz-button" href="http://www.google.com/buzz/post" data-button-style="small-button"></a>
-        <script type="text/javascript" src="http://www.google.com/buzz/api/button.js"></script>
-      </div>
+      <!-- google +1 -->
+      <g:plusone size="tall"></g:plusone>
+      <script type="text/javascript">
+        (function() {
+          var po = document.createElement('script'); po.type = 'text/javascript'; po.async = true;
+          po.src = 'https://apis.google.com/js/plusone.js';
+          var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(po, s);
+        })();
+      </script>
     </div>
 
     <div id="nav">
