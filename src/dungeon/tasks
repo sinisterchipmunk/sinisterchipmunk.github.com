@@ -1,5 +1,0 @@
-./app/controllers/chamber_controller.js:57:      // TODO everything below this point should be moved to a model.
-./app/models/logo_particles.js:70:      // HACK bug in jax is applying additive blending to objects that aren't lit
-./vendor/plugins/blender_model/app/models/blender_model.js:50:                // FIXME this is redundant data. Should the above layer stuff be defined for index 0?
-./vendor/plugins/blender_model/app/models/blender_model.js:55:                // TODO uv layer stuff
-./vendor/plugins/blender_model/app/models/blender_model.js:57:                // FIXME this is redundant data. Should the above layer stuff be defined for index 0?

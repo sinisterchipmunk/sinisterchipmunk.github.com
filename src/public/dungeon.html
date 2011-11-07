@@ -1,0 +1,72 @@
+<html>
+  <head>
+    <title>Jax WebGL Demos - Dungeon</title>
+    <script type="text/javascript">
+
+      var _gaq = _gaq || [];
+      _gaq.push(['_setAccount', 'UA-24922278-1']);
+      _gaq.push(['_trackPageview']);
+
+      (function() {
+        var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+        ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';        var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);      })();
+
+    </script>
+    <script type="text/javascript" src="/assets/jax/application.js"></script>
+    <script type="text/javascript">
+      window.maintainCanvasAspectRatio = function() {
+        // set the jax canvas to a ratio of actual browser size, so
+        // that aspect ratio is not lost when we scale to 100%
+        var width = window.innerWidth, height = window.innerHeight;
+        var ratio = width / height;
+        window.context.canvas.width = parseInt(500 * ratio);
+        window.context.player.camera.perspective(window.context.canvas);
+      };
+    
+      window.addEventListener('load', function() {
+        window.context = new Jax.Context('jax-canvas');
+        window.context.redirectTo("dungeon");
+        window.maintainCanvasAspectRatio();
+      }, false);
+      
+      window.addEventListener('resize', window.maintainCanvasAspectRatio);
+    </script>
+    <style>
+      #nav {
+        position:absolute;
+        top: 0px;
+        left: 0px;
+        background-color: #fff;
+        z-index:100; /* for chrome */
+      }
+      body {
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div style="position:fixed;z-index:99;top:0px;right:0px;margin:10px;">
+      <!-- twitter -->
+      <div style="margin-bottom:5px;">
+        <a href="http://twitter.com/share" class="twitter-share-button" data-count="vertical" data-via="sinisterchipmnk">Tweet</a><script type="text/javascript" src="http://platform.twitter.com/widgets.js"></script>
+      </div>
+
+      <!-- google +1 -->
+      <g:plusone size="tall"></g:plusone>
+      <script type="text/javascript">
+        (function() {
+          var po = document.createElement('script'); po.type = 'text/javascript'; po.async = true;
+          po.src = 'https://apis.google.com/js/plusone.js';
+          var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(po, s);
+        })();
+      </script>
+    </div>
+
+    <div id="nav">
+      WSAD - move camera | Press &amp; Drag mouse - rotate camera |
+      a <a href="http://blog.jaxgl.com/what-is-jax">Jax project</a> |
+      <a href="http://sinisterchipmunk.github.com/">See other demos</a>
+    </div>
+    <canvas id="jax-canvas" width='500' height='500' style="width:100%;height:100%;"></canvas>
+  </body>
+</html>
