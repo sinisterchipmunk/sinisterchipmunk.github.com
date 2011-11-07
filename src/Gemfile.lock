@@ -138,6 +138,6 @@ PLATFORMS
 
 DEPENDENCIES
   coffee-rails
-  jax (= 2.0.2)
+  jax
   sass-rails
   uglifier

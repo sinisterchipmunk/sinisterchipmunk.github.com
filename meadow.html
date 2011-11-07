@@ -1,30 +1,25 @@
 <html>
   <head>
-    <script type="text/javascript">
-
-      var _gaq = _gaq || [];
-      _gaq.push(['_setAccount', 'UA-24922278-1']);
-      _gaq.push(['_trackPageview']);
-
-      (function() {
-        var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-        ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';        var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);      })();
-
-    </script>
-
     <title>Jax WebGL Demos - Meadow</title>
-    <script type="text/javascript" src="/javascripts/jax.js"></script>
-    <script type="text/javascript" src="/javascripts/meadow.js"></script>
+    <script type="text/javascript" src="/assets/application.js"></script>
+    <script type="text/javascript" src="/assets/jax/application.js"></script>
     <script type="text/javascript">
-      window.addEventListener('load', function() {
+      window.maintainCanvasAspectRatio = function() {
         // set the jax canvas to a ratio of actual browser size, so
         // that aspect ratio is not lost when we scale to 100%
         var width = window.innerWidth, height = window.innerHeight;
         var ratio = width / height;
-        document.getElementById('jax-canvas').width = parseInt(500 * ratio);
-
+        window.context.canvas.width = parseInt(500 * ratio);
+        window.context.player.camera.perspective(window.context.canvas);
+      };
+    
+      window.addEventListener('load', function() {
         window.context = new Jax.Context('jax-canvas');
+        window.context.redirectTo("meadow");
+        window.maintainCanvasAspectRatio();
       }, false);
+      
+      window.addEventListener('resize', window.maintainCanvasAspectRatio);
     </script>
     <style>
       #nav {
@@ -58,8 +53,7 @@
     </div>
 
     <div id="nav">
-      WSAD - move camera |
-      Drag mouse - rotate camera |
+      WSAD - move camera | Press &amp; Drag mouse - rotate camera |
       a <a href="http://blog.jaxgl.com/what-is-jax">Jax project</a> |
       <a href="http://sinisterchipmunk.github.com/">See other demos</a>
     </div>

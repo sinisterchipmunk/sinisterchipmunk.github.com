@@ -1,6 +1,6 @@
 source :gemcutter
 
-gem 'jax', '2.0.2'
+gem 'jax'
 
 # Jax will generate files using CoffeeScript by default.
 # If you want to work in pure JavaScript, simply remove

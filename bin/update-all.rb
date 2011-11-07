@@ -1,23 +1,21 @@
 #!/usr/bin/env ruby
 
-if ARGV.length == 0
-  require 'jax'
-  version = Jax::VERSION
-else
-  version = ARGV[0]
-end
-
 require File.expand_path('string', File.dirname(__FILE__))
 
-Dir["src/*"].each do |d|
-  File.open(File.join(d, "Gemfile"), "w") do |f|
-    f.puts "source \"http://rubygems.org\"\n\ngem 'jax', '#{version}'"
-  end
-  
-  if !system("cd #{d}; bundle update jax --local; bundle exec rake jax:update; cd ..")
+def try(*cmd)
+  puts "Executing: #{cmd.join(" ")}"
+  unless system *cmd
     puts "uh oh...".red
     exit
   end
+end
+
+Dir.chdir "src" do
+  try "bundle update jax --local"
+  try "ruby frontend/demos.rb"
+  try "rake assets:precompile"
+  try "cp -r public/* ../"
+  try "rake assets:clean"
 end
 
 puts "all good".green
