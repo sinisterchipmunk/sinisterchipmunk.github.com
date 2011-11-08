@@ -13,18 +13,20 @@ ups = 0
 count = 0
 track_framerate = ->
   setTimeout track_framerate, 1000
-  return unless window.context # jax isn't initialized yet?
+  unless window.context # jax isn't initialized yet?
+    last_duration = Jax.uptime
   
   count++
   duration += Jax.uptime - last_duration
   fps += window.context.getFramesPerSecond()
   ups += window.context.getUpdatesPerSecond()
-  last_duration = Jax.uptime
   
   if count >= 5
+    last_duration = Jax.uptime
     _gaq.push ['_trackEvent', 'duration', 'duration', 'duration', duration]
-    _gaq.push ['_trackEvent', 'performance', 'framerate', 'framerate', fps / count]
-    _gaq.push ['_trackEvent', 'performance', 'update rate', 'update rate', ups / count]
+    _gaq.push ['_trackEvent', 'performance', 'framerate', 'framerate', Math.floor(fps / count)]
+    _gaq.push ['_trackEvent', 'performance', 'updaterate', 'updaterate', Math.floor(ups / count)]
+    # document.getElementById('fps').innerHTML = "fps: #{fps / count}; ups: #{ups / count}; dur: #{duration}; dur sum: #{sum_dir}"
     count = 0
     fps = ups = duration = 0
 
