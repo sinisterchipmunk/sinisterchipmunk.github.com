@@ -15,6 +15,7 @@ track_framerate = ->
   setTimeout track_framerate, 1000
   unless window.context # jax isn't initialized yet?
     last_duration = Jax.uptime
+    return
   
   count++
   duration += Jax.uptime - last_duration
