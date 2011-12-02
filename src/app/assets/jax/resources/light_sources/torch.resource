@@ -1,4 +1,4 @@
-shadowcaster: true
+shadowcaster: false
 enabled: true
 position:
   x: -20
