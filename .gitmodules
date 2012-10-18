@@ -1,0 +1,3 @@
+[submodule "src/vendor/plugins/coldet"]
+	path = src/vendor/plugins/coldet
+	url = git://github.com/sinisterchipmunk/jax-coldet
